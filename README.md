@@ -14,7 +14,8 @@
 ## Usage
 
 ```bash
-python3.12 elfscan.py -m detailed <elf_binary>```
+python3.12 elfscan.py -m detailed <elf_binary>
+```
 
 ## Example:
 
