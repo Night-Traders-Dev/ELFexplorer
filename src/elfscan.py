@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-elf_analyzer.py
+elfscan.py
 
 A Python script to analyze an ELF file using pyelftools with selectable output modes.
 Output modes:
@@ -19,7 +19,7 @@ This script includes improved heuristics for detecting the original source langu
 If no strong evidence is found, it falls back to assuming C, which is common for simple binaries.
 
 Usage:
-  python3 elf_analyzer.py [-m {general,important,detailed}] <path-to-elf-file>
+  python3 elfscan.py [-m {general,important,detailed}] <path-to-elf-file>
 """
 
 import sys
