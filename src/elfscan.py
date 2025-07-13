@@ -37,17 +37,45 @@ def scan_symbols(symbol_iter, scores):
         name = symbol.name.lower()
         if not name:
             continue
-        # Rust-specific symbols increase Rust's score.
+        # Rust-specific symbols
         if "rust_eh_personality" in name:
             scores["Rust"] += 5
         if "__rust_alloc" in name or "__rust_dealloc" in name or "__rust_realloc" in name:
             scores["Rust"] += 5
+        if "core::" in name or "alloc::" in name or "panic_" in name or "rust_begin_unwind" in name:
+            scores["Rust"] += 2
+        # Go-specific symbols
+        if name.startswith("go.func.") or name.startswith("runtime.") or name.startswith("type.") or name.startswith("go.itab."):
+            scores["Go"] += 2
+        # C++ mangled names and STL
+        if name.startswith('_z') and "rust" not in name:
+            scores["C++"] += 2
+        if "std::" in name or "__cxx" in name or "typeinfo" in name:
+            scores["C++"] += 2
+        # D language
+        if "_dmain" in name or "_dmodule" in name:
+            scores["D"] += 3
+        # Ada
+        if "ada__" in name:
+            scores["Ada"] += 3
+        # Fortran
+        if "_gfortran" in name:
+            scores["Fortran"] += 3
+        # Nim
+        if "nimrtl" in name or "nim_gc" in name:
+            scores["Nim"] += 3
+        # Swift
+        if "swift" in name:
+            scores["Swift"] += 3
+        # Java JNI
+        if "jni_" in name or "jvm" in name:
+            scores["Java"] += 2
+        # Python embedded
+        if "pyinit" in name or "python" in name:
+            scores["Python"] += 2
         # General check: any appearance of "rust" gives a small boost.
         if "rust" in name:
             scores["Rust"] += 1
-        # Check for C++ mangled names (typically starting with _Z)
-        if name.startswith('_z') and "rust" not in name:
-            scores["C++"] += 2
 
 def detect_source_language(elf):
     """
@@ -67,7 +95,14 @@ def detect_source_language(elf):
         "C": 0,
         "C++": 0,
         "Rust": 0,
-        "Go": 0
+        "Go": 0,
+        "D": 0,
+        "Ada": 0,
+        "Fortran": 0,
+        "Nim": 0,
+        "Swift": 0,
+        "Java": 0,
+        "Python": 0
     }
     
     # --- Check for .comment section ---
@@ -85,6 +120,20 @@ def detect_source_language(elf):
                 scores["Rust"] += 3
             if "go build" in data or "golang" in data:
                 scores["Go"] += 3
+            if "dmd" in data or "ldc" in data:
+                scores["D"] += 3
+            if "gnat" in data:
+                scores["Ada"] += 3
+            if "gfortran" in data:
+                scores["Fortran"] += 3
+            if "nim" in data:
+                scores["Nim"] += 3
+            if "swift" in data:
+                scores["Swift"] += 3
+            if "javac" in data or "openjdk" in data:
+                scores["Java"] += 3
+            if "python" in data:
+                scores["Python"] += 3
         except Exception as e:
             print(f"Error reading .comment section: {e}")
     
@@ -95,6 +144,21 @@ def detect_source_language(elf):
     note_rust = elf.get_section_by_name('.note.rustc')
     if note_rust:
         scores["Rust"] += 5
+    note_d = elf.get_section_by_name('.note.dmd')
+    if note_d:
+        scores["D"] += 5
+    note_nim = elf.get_section_by_name('.note.nim')
+    if note_nim:
+        scores["Nim"] += 5
+    note_swift = elf.get_section_by_name('.note.swift')
+    if note_swift:
+        scores["Swift"] += 5
+    note_java = elf.get_section_by_name('.note.java')
+    if note_java:
+        scores["Java"] += 5
+    note_python = elf.get_section_by_name('.note.python')
+    if note_python:
+        scores["Python"] += 5
 
     # --- Check Dynamic Section (DT_NEEDED) ---
     dynamic = elf.get_section_by_name('.dynamic')
@@ -111,6 +175,20 @@ def detect_source_language(elf):
                         scores["Rust"] += 3
                     if "go" in needed:
                         scores["Go"] += 3
+                    if "dmd" in needed or "libphobos" in needed:
+                        scores["D"] += 3
+                    if "gnat" in needed:
+                        scores["Ada"] += 3
+                    if "gfortran" in needed:
+                        scores["Fortran"] += 3
+                    if "nim" in needed:
+                        scores["Nim"] += 3
+                    if "swift" in needed:
+                        scores["Swift"] += 3
+                    if "jvm" in needed or "java" in needed:
+                        scores["Java"] += 3
+                    if "python" in needed:
+                        scores["Python"] += 3
         except Exception as e:
             print(f"Error processing dynamic section: {e}")
 
@@ -137,21 +215,77 @@ def detect_source_language(elf):
             ddata = debug_info_sec.data()[:4096].lower()
             if b"rustc" in ddata:
                 scores["Rust"] += 5
+            # DWARF producer string (compiler info)
+            if b"gcc" in ddata or b"gnu" in ddata:
+                scores["C"] += 2
+                scores["C++"] += 1
+            if b"clang" in ddata:
+                scores["C"] += 2
+                scores["C++"] += 1
+            if b"dmd" in ddata or b"ldc" in ddata:
+                scores["D"] += 2
+            if b"gnat" in ddata:
+                scores["Ada"] += 2
+            if b"gfortran" in ddata:
+                scores["Fortran"] += 2
+            if b"nim" in ddata:
+                scores["Nim"] += 2
+            if b"swift" in ddata:
+                scores["Swift"] += 2
+            if b"javac" in ddata or b"openjdk" in ddata:
+                scores["Java"] += 2
+            if b"python" in ddata:
+                scores["Python"] += 2
         except Exception as e:
             print(f"Error reading .debug_info: {e}")
 
+    # --- Check for language-specific sections ---
+    for section in elf.iter_sections():
+        sname = section.name.lower()
+        if sname in ['.eh_frame', '.gcc_except_table']:
+            scores["C++"] += 1
+            scores["Rust"] += 1
+        if sname.startswith('.rodata.str1.'):
+            scores["Go"] += 1
+        if sname == '.dlang':
+            scores["D"] += 2
+        if sname == '.gnat':
+            scores["Ada"] += 2
+        if sname == '.gfortran':
+            scores["Fortran"] += 2
+        if sname == '.nim':
+            scores["Nim"] += 2
+        if sname == '.swift':
+            scores["Swift"] += 2
+        if sname == '.jvm' or sname == '.java':
+            scores["Java"] += 2
+        if sname == '.python':
+            scores["Python"] += 2
+
+    # --- Handle stripped binaries ---
+    has_symbols = False
+    if symtab and symtab.num_symbols() > 0:
+        has_symbols = True
+    elif dynsym and dynsym.num_symbols() > 0:
+        has_symbols = True
+
+    # --- Print confidence scores ---
+    print("Language detection scores:")
+    for lang, score in scores.items():
+        print(f"  {lang}: {score}")
+
     # --- Determine language based on scoring ---
     detected_language = "Unknown"
-    max_score = 0
-    for lang, score in scores.items():
-        if score > max_score:
-            max_score = score
-            detected_language = lang
-
-    # Fallback: if no strong evidence found, assume C (common for simple binaries)
-    if max_score < 2:
-        detected_language = "C"
-    
+    max_score = max(scores.values())
+    top_langs = [lang for lang, score in scores.items() if score == max_score and score > 0]
+    if not has_symbols and max_score < 2:
+        print("Warning: Binary appears stripped; detection may be unreliable.")
+    if len(top_langs) == 1:
+        detected_language = top_langs[0]
+    elif len(top_langs) > 1:
+        detected_language = "Ambiguous: " + "/".join(top_langs)
+    else:
+        detected_language = "C"  # Fallback: common for simple binaries
     return detected_language
 
 def print_general_info(elf):
