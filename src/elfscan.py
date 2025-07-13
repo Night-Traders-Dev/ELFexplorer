@@ -16,7 +16,7 @@ Usage:
 import sys
 import argparse
 from elftools.elf.elffile import ELFFile
-from symbol.elfsymbols import scan_symbols
+from symbols.elfsymbols import scan_symbols
 from detect.elfdetect import detect_source_language
 from info.elfinfo import print_general_info, print_important_info, print_detailed_info
 
