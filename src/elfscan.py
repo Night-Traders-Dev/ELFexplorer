@@ -44,13 +44,19 @@ def scan_symbols(symbol_iter, scores):
             scores["Rust"] += 5
         if "core::" in name or "alloc::" in name or "panic_" in name or "rust_begin_unwind" in name:
             scores["Rust"] += 2
+        # Rust mangled names: _ZN... (Itanium ABI, used by Rust)
+        if name.startswith('_zn') or name.startswith('__zn'):
+            scores["Rust"] += 2
         # Go-specific symbols
         if name.startswith("go.func.") or name.startswith("runtime.") or name.startswith("type.") or name.startswith("go.itab."):
             scores["Go"] += 2
-        # C++ mangled names and STL
-        if name.startswith('_z') and "rust" not in name:
+        # C++ mangled names and STL (stricter: only if not Rust)
+        if name.startswith('_z') and "rust" not in name and not name.startswith('_zn'):
             scores["C++"] += 2
         if "std::" in name or "__cxx" in name or "typeinfo" in name:
+            scores["C++"] += 2
+        # C++ vtable, RTTI, exception
+        if "vtable for" in name or "rtti" in name or "__cxa" in name:
             scores["C++"] += 2
         # D language
         if "_dmain" in name or "_dmodule" in name:
@@ -73,9 +79,20 @@ def scan_symbols(symbol_iter, scores):
         # Python embedded
         if "pyinit" in name or "python" in name:
             scores["Python"] += 2
-        # General check: any appearance of "rust" gives a small boost.
+        # Additional checks for Rust and C++
         if "rust" in name:
             scores["Rust"] += 1
+        if "rust" in name and (name.startswith('_z') or name.startswith('_zn')):
+            scores["Rust"] += 2  # Rust mangled names with rust substring
+        # Check for common Rust crate prefixes
+        if name.startswith('alloc_') or name.startswith('core_') or name.startswith('std_'):
+            scores["Rust"] += 1
+        # Check for common Go runtime symbols
+        if name.startswith('runtime.') or name.startswith('main.main'):
+            scores["Go"] += 1
+        # Check for common C++ STL containers
+        if "std::vector" in name or "std::string" in name or "std::map" in name:
+            scores["C++"] += 2
 
 def detect_source_language(elf):
     """
