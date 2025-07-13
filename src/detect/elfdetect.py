@@ -1,5 +1,5 @@
 # Functions for detecting the source language of an ELF binary
-from elfsymbols import scan_symbols
+from symbols.elfsymbols import scan_symbols
 from elftools.elf.elffile import ELFFile
 
 def detect_source_language(elf):
