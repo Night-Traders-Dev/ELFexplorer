@@ -16,9 +16,9 @@ Usage:
 import sys
 import argparse
 from elftools.elf.elffile import ELFFile
-from elfsymbols import scan_symbols
-from elfdetect import detect_source_language
-from elfinfo import print_general_info, print_important_info, print_detailed_info
+from symbol.elfsymbols import scan_symbols
+from detect.elfdetect import detect_source_language
+from info.elfinfo import print_general_info, print_important_info, print_detailed_info
 
 def detect_source_language(elf):
     """
