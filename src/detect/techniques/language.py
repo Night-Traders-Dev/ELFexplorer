@@ -65,7 +65,14 @@ def score_comment_section(elf, scores):
             scores["Zig"] += 4
         if "dart" in data:
             scores["Dart"] += 2
-        if "dotnet" in data or "coreclr" in data or "mono" in data:
+        if (
+            "dotnet" in data
+            or "coreclr" in data
+            or "hostfxr" in data
+            or "hostpolicy" in data
+            or "libmono" in data
+            or "mono runtime" in data
+        ):
             scores["C#"] += 3
     except Exception as exc:
         print(f"Error reading .comment section: {exc}")
@@ -125,7 +132,13 @@ def score_dynamic_section(elf, scores):
                 scores["Python"] += 3
             if "libsage" in needed or "sagelang" in needed:
                 scores["SageLang"] += 4
-            if "coreclr" in needed or "hostfxr" in needed or "hostpolicy" in needed or "mono" in needed:
+            if (
+                "coreclr" in needed
+                or "hostfxr" in needed
+                or "hostpolicy" in needed
+                or "libmono" in needed
+                or needed.startswith("mono")
+            ):
                 scores["C#"] += 6
             if "libdart" in needed:
                 scores["Dart"] += 6
@@ -348,7 +361,14 @@ def score_debug_info(elf, scores):
             scores["Dart"] += 3
         if b"zig" in data:
             scores["Zig"] += 2
-        if b"coreclr" in data or b"dotnet" in data or b"mono" in data:
+        if (
+            b"coreclr" in data
+            or b"dotnet" in data
+            or b"hostfxr" in data
+            or b"hostpolicy" in data
+            or b"libmono" in data
+            or b"mono runtime" in data
+        ):
             scores["C#"] += 3
     except Exception as exc:
         print(f"Error reading .debug_info: {exc}")
@@ -360,8 +380,8 @@ def score_section_names(elf, scores):
         if section_name == ".gcc_except_table":
             scores["C++"] += 1
             scores["Rust"] += 1
-        if section_name.startswith(".rodata.str1."):
-            scores["Go"] += 1
+        if section_name in [".gopclntab", ".go.buildinfo", ".gosymtab"]:
+            scores["Go"] += 4
         if section_name == ".dlang":
             scores["D"] += 2
         if section_name == ".gnat":

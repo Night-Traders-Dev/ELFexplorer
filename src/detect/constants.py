@@ -50,6 +50,7 @@ BUILD_SYSTEM_HEURISTICS = (
     "Go Toolchain",
     "Dart/Flutter",
     "Zig Build",
+    "Pico SDK",
 )
 
 LANGUAGE_STRING_SCAN_SECTIONS = (
@@ -113,7 +114,6 @@ CSHARP_STRING_MARKERS = (
     b"coreclr",
     b"hostfxr",
     b"hostpolicy",
-    b"mono",
     b"dotnet",
     b"mscorlib",
 )
@@ -385,5 +385,10 @@ BUILD_SYSTEM_MARKERS = {
     "Zig Build": (
         b"build.zig",
         b".zig-cache/",
+    ),
+    "Pico SDK": (
+        b"/pico-sdk/",
+        b"pico_platform",
+        b"hardware_regs/include/hardware/regs",
     ),
 }

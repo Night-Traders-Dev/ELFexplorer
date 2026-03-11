@@ -62,6 +62,40 @@ def _is_sage_generated_c_file_symbol(name):
     return sequence.isdigit()
 
 
+def _is_go_symbol_fingerprint(name):
+    if name.startswith(("go.func.", "go.itab.", "go:", "go.")):
+        return True
+
+    if name.startswith("main.main"):
+        return True
+
+    if name.startswith("runtime."):
+        if name.endswith((".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".s", ".asm", ".o")):
+            return False
+
+        member = name.split(".", maxsplit=1)[1] if "." in name else ""
+        if member == "main" or member.startswith("rt0_"):
+            return True
+        if member.startswith(("mstart", "morestack", "newproc", "newobject", "gcenable", "sched", "gc")):
+            return True
+        return False
+
+    if name.startswith("type."):
+        return name.startswith("type..")
+
+    return False
+
+
+def _is_c_source_file_symbol(name):
+    if not name.endswith(".c"):
+        return False
+    return not _is_sage_generated_c_file_symbol(name)
+
+
+def _is_cpp_source_file_symbol(name):
+    return name.endswith((".cc", ".cpp", ".cxx", ".c++", ".cp"))
+
+
 def scan_symbols(symbol_iter, scores, seen_names=None):
     """
     Scan symbols and update language scores based on naming heuristics.
@@ -69,6 +103,9 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
     sage_symbol_count = 0
     sage_runtime_family_count = 0
     sage_cluster_hits = set()
+    go_symbol_fingerprint_count = 0
+    c_source_file_count = 0
+    cpp_source_file_count = 0
 
     for symbol in symbol_iter:
         name = symbol.name.lower()
@@ -95,6 +132,11 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             if name in SAGELANG_CLUSTER_SENTINELS:
                 sage_cluster_hits.add(name)
 
+        if _is_c_source_file_symbol(name):
+            c_source_file_count += 1
+        if _is_cpp_source_file_symbol(name):
+            cpp_source_file_count += 1
+
         if "rust_eh_personality" in name:
             scores["Rust"] += 5
         if "__rust_alloc" in name or "__rust_dealloc" in name or "__rust_realloc" in name:
@@ -104,8 +146,8 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
         if name.startswith("_zn") or name.startswith("__zn"):
             scores["Rust"] += 2
 
-        if name.startswith("go.func.") or name.startswith("runtime.") or name.startswith("type.") or name.startswith("go.itab."):
-            scores["Go"] += 2
+        if _is_go_symbol_fingerprint(name):
+            go_symbol_fingerprint_count += 1
 
         if name.startswith("dart_"):
             scores["Dart"] += 3
@@ -158,10 +200,35 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             scores["Rust"] += 2
         if name.startswith("alloc_") or name.startswith("core_") or name.startswith("std_"):
             scores["Rust"] += 1
-        if name.startswith("runtime.") or name.startswith("main.main"):
-            scores["Go"] += 1
         if "std::vector" in name or "std::string" in name or "std::map" in name:
             scores["C++"] += 2
+
+    if go_symbol_fingerprint_count >= 6:
+        scores["Go"] += 10
+    elif go_symbol_fingerprint_count >= 3:
+        scores["Go"] += 6
+    elif go_symbol_fingerprint_count >= 1:
+        scores["Go"] += 3
+
+    if c_source_file_count >= 64:
+        scores["C"] += 30
+    elif c_source_file_count >= 24:
+        scores["C"] += 18
+    elif c_source_file_count >= 8:
+        scores["C"] += 10
+    elif c_source_file_count >= 3:
+        scores["C"] += 5
+    elif c_source_file_count >= 1:
+        scores["C"] += 2
+
+    if cpp_source_file_count >= 24:
+        scores["C++"] += 20
+    elif cpp_source_file_count >= 8:
+        scores["C++"] += 12
+    elif cpp_source_file_count >= 3:
+        scores["C++"] += 6
+    elif cpp_source_file_count >= 1:
+        scores["C++"] += 3
 
     if "SageLang" in scores:
         if sage_symbol_count >= 20:

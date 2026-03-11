@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Tests](https://img.shields.io/badge/tests-unittest%20heuristics%20%2B%20corpus-brightgreen)](#testing)
@@ -75,6 +75,7 @@ Current host build-system labels:
 - `Go Toolchain`
 - `Dart/Flutter`
 - `Zig Build`
+- `Pico SDK`
 - `Ambiguous: ...`
 - `Unknown`
 
@@ -121,7 +122,7 @@ python3 src/elfscan.py --version
 ## Versioning
 
 - Canonical project version is tracked in the root [`VERSION`](VERSION) file.
-- Current version: `0.2.0`
+- Current version: `0.2.1`
 - The CLI reports this via:
 
 ```bash
@@ -211,6 +212,11 @@ Detection is heuristic, not ground truth. It combines:
 - disassembly-inspired opcode pattern scanning in `.text` for stripped/minimal binaries
 - binary-shape rules (for ASM)
 - assembler-family marker detection (`NASM`, `FASM`, `MASM`, `TASM`) from producer/comment/string evidence
+
+False-positive guardrails include:
+- Go scoring now requires Go-specific symbol fingerprints (`go.*`, `go.itab.*`, `main.main`, `runtime.main`/`runtime.rt0_*`) and ignores generic file symbols like `runtime.c`.
+- C scoring now incorporates volume of real `.c` file symbols (excluding Sage-generated `sagec_<n>.c`), which improves mixed firmware attribution where embedded runtimes coexist.
+- C# weak `mono` substring checks were tightened to explicit runtime markers (`libmono`, `coreclr`, `hostfxr`, `hostpolicy`, `dotnet`).
 
 See `ELFexplored_Guide.md` for full details.
 

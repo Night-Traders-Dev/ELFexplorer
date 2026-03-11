@@ -2,6 +2,16 @@ from detect.constants import BUILD_SYSTEM_MARKERS, BUILD_SYSTEM_STRING_SCAN_SECT
 from detect.utils import collect_symbol_names, iter_dynamic_needed, read_section_data
 
 
+def _is_go_build_symbol(name):
+    if name.startswith(("go.", "go.func.", "go.itab.", "go:")):
+        return True
+    if name.startswith("main.main"):
+        return True
+    if name.startswith("runtime.main") or name.startswith("runtime.rt0_"):
+        return True
+    return False
+
+
 def score_build_system_strings(elf, scores):
     marker_hits = {build_system: 0 for build_system in BUILD_SYSTEM_MARKERS}
 
@@ -34,7 +44,7 @@ def score_build_system_symbols(elf, scores):
     if not symbols:
         return
 
-    if any(name.startswith("go.") or name.startswith("runtime.") for name in symbols):
+    if any(_is_go_build_symbol(name) for name in symbols):
         scores["Go Toolchain"] += 4
 
     if any("dart" in name for name in symbols):

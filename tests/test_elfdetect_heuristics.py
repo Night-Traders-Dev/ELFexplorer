@@ -259,9 +259,68 @@ class HeuristicDetectionTests(unittest.TestCase):
         elf = FakeELF([FakeSection(".note.go.buildid")])
         self.assertEqual(self.detect_build_system_name(elf), "Go Toolchain")
 
+    def test_runtime_c_file_symbol_does_not_trigger_go(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".symtab",
+                    symbols=[
+                        FakeSymbol("runtime.c"),
+                        FakeSymbol("main.c"),
+                        FakeSymbol("platform.c"),
+                        FakeSymbol("driver.c"),
+                    ],
+                )
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "C")
+        self.assertEqual(self.detect_build_system_name(elf), "Unknown")
+
+    def test_many_c_file_symbols_outweigh_embedded_sagelang_symbols(self):
+        c_file_symbols = [FakeSymbol(f"/firmware/src/module_{index}.c") for index in range(90)]
+        sage_symbols = [
+            FakeSymbol("sage_gpio_set_pull"),
+            FakeSymbol("sage_gpio_toggle"),
+            FakeSymbol("sage_gpio_read"),
+            FakeSymbol("sage_gpio_write"),
+            FakeSymbol("sage_gpio_init"),
+            FakeSymbol("sage_sys_print"),
+            FakeSymbol("sage_sys_version"),
+            FakeSymbol("sage_sys_temp"),
+            FakeSymbol("sage_sys_info"),
+            FakeSymbol("sage_sys_clock"),
+            FakeSymbol("sage_sys_free_ram"),
+            FakeSymbol("sage_sys_uptime"),
+        ]
+        elf = FakeELF([FakeSection(".symtab", symbols=c_file_symbols + sage_symbols)])
+        self.assertEqual(self.detect_language(elf), "C")
+
+    def test_comment_with_mono_substring_does_not_trigger_csharp(self):
+        elf = FakeELF(
+            [
+                FakeSection(".comment", data=b"monolithic monitor firmware build"),
+                FakeSection(".symtab", symbols=[FakeSymbol("main.c"), FakeSymbol("board.c"), FakeSymbol("uart.c")]),
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "C")
+
     def test_detects_build_system_gradle_from_debug_path(self):
         elf = FakeELF([FakeSection(".debug_str", data=b"/workspace/.gradle/caches/modules/main.o")])
         self.assertEqual(self.detect_build_system_name(elf), "Gradle")
+
+    def test_detects_build_system_pico_sdk_from_debug_paths(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".debug_str",
+                    data=(
+                        b"/home/kraken/pico-sdk/src/rp2040/pico_platform/include/pico\x00"
+                        b"/home/kraken/pico-sdk/src/rp2040/hardware_regs/include/hardware/regs\x00"
+                    ),
+                )
+            ]
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Pico SDK")
 
     def test_disassembly_pattern_boosts_asm_on_x86_64(self):
         elf = FakeELF(

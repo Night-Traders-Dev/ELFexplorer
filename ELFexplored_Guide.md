@@ -98,7 +98,7 @@ Compiler detection follows a similar but separate scoring pass and returns:
 - `Unknown`
 
 Build-system detection follows another independent scoring pass and returns labels like:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
 - or `Ambiguous: ...` / `Unknown`
 
 ## 5. Scoring Strategy
@@ -114,6 +114,9 @@ Important design choices:
 - Runtime-string evidence for SageLang is gated behind Sage anchors to prevent false positives.
 - ASM detection uses shape rules, not only symbol names.
 - Dart detection uses explicit `Dart_*` API signatures and marker density.
+- Go attribution requires explicit Go runtime/program symbols and does not treat generic file symbols such as `runtime.c` as Go evidence.
+- C scoring includes source-file density boosts from `.c` FILE symbols (excluding Sage-generated `sagec_<n>.c`) to reduce embedded-runtime false positives.
+- C# scoring avoids generic `mono` substring hits and prefers explicit runtime markers (`libmono`, `coreclr`, `hostfxr`, `hostpolicy`, `dotnet`).
 
 ## 6. Language Heuristic Catalog
 
@@ -133,6 +136,7 @@ Why this matters:
 Common evidence:
 - GCC/Clang comment markers
 - libc-only dynamic linkage (`libc.so.6`) boost
+- high volume of real `.c` source file symbols in symbol tables
 - absence of stronger C++/Rust/Dart/etc. signatures
 
 ### 6.3 C++
@@ -146,7 +150,7 @@ Common evidence:
 ### 6.4 C#
 
 Common evidence:
-- runtime/library markers: `coreclr`, `hostfxr`, `hostpolicy`, `mono`, `dotnet`, `mscorlib`
+- runtime/library markers: `coreclr`, `hostfxr`, `hostpolicy`, `libmono`, `dotnet`, `mscorlib`
 - dynamic dependencies referencing .NET runtime components
 - strings and symbols linked to managed runtime hosting
 
@@ -160,9 +164,10 @@ Common evidence:
 ### 6.6 Go
 
 Common evidence:
-- `go.func.`, `runtime.`, `go.itab.` symbol conventions
+- `go.func.`, `go.itab.`, `main.main`, `runtime.main`/`runtime.rt0_*` symbol conventions
 - `.note.go.buildid`
 - characteristic runtime symbol volume
+- explicit filtering of generic file symbols like `runtime.c`
 
 ### 6.7 Dart
 
@@ -283,7 +288,7 @@ Evidence sources:
 - language-runtime symbols and dynamic dependencies (Go, Dart/Flutter, .NET, Zig)
 
 Outputs include:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
 - `Ambiguous: ...` or `Unknown`
 
 ## 9. CLI Visual Design
@@ -332,6 +337,7 @@ Verbosity levels:
 - GCC/Clang/Rustc/Go/NASM/FASM/MASM/TASM compiler inference
 - build-system inference basics
 - disassembly-pattern ASM boosting
+- false-positive regressions (`runtime.c` should not imply Go, weak `mono*` text should not imply C#, mixed C + embedded Sage symbols should still classify as C when C evidence dominates)
 
 Benefits:
 - fast execution
