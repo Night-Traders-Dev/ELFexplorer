@@ -25,6 +25,7 @@
 - Added Textual report command-palette actions (`Ctrl+P`) for:
   - exporting the current report to Markdown/PDF
   - switching metadata mode (`general`/`important`/`detailed`) and rescanning in-place
+- Added `settings.conf` (JSON) persistence for Textual theme selection from the command palette.
 
 ## What Changed in 0.5.0
 
@@ -97,6 +98,7 @@ Current false-positive guardrails include:
 - `src/uf2/`: UF2 parsing and UF2-backed firmware scanning
 - `src/baremetal/`: Intel HEX, S-record, and raw firmware scanners
 - `src/elfarchive/`: GNU ar archive scanners for ELF member aggregation
+- `src/settings.py`: JSON settings loader/saver
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
@@ -105,6 +107,7 @@ Current false-positive guardrails include:
 - `install_deps.py`: dependency installer (profile/group based)
 - `tests/`: regression and unit tests
 - `test-bin/`: multi-arch corpus fixtures
+- `settings.conf`: persisted user settings (currently Textual theme)
 
 ## Requirements
 
@@ -205,6 +208,14 @@ Quick keys in report view:
 - `1`: switch to `general` and rescan
 - `2`: switch to `important` and rescan
 - `3`: switch to `detailed` and rescan
+
+## Settings
+
+ELFexplorer stores user UI preferences in JSON:
+- file: `settings.conf` (repository root)
+- current persisted key: `theme`
+
+When you change theme from Textual command palette (`Ctrl+P` -> Theme), the selected theme is saved and automatically reused in both Textual workspace and Textual report views.
 
 ## Task Files
 

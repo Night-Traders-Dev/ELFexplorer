@@ -4,6 +4,7 @@ from typing import Dict, Iterable, Tuple
 
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
+from settings import load_theme_preference, save_theme_preference
 
 
 def _summary_lines(report: Dict) -> str:
@@ -96,6 +97,17 @@ def run_textual_report(report: Dict):
         def __init__(self, initial_report: Dict):
             super().__init__()
             self.report = dict(initial_report)
+
+        def _apply_saved_theme(self):
+            saved_theme = load_theme_preference()
+            if saved_theme in self.available_themes and self.theme != saved_theme:
+                self.theme = saved_theme
+
+        def watch_theme(self, theme: str):
+            try:
+                save_theme_preference(theme)
+            except OSError:
+                pass
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
@@ -232,6 +244,7 @@ def run_textual_report(report: Dict):
             self._rescan(mode="detailed")
 
         def on_mount(self) -> None:
+            self._apply_saved_theme()
             self._refresh_view()
 
     ReportApp(report).run()

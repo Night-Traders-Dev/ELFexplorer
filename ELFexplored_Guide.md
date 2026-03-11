@@ -92,6 +92,8 @@ Outputs are available as:
   - raw binary firmware scanner
 - `src/elfarchive/`
   - GNU ar parser + ELF member aggregation scanner
+- `src/settings.py`
+  - JSON settings persistence for UI preferences
 - `src/detect/elfdetect.py`
   - compatibility re-export of detector entrypoints
 - `src/detect/language/core.py`
@@ -283,6 +285,17 @@ When running report UI mode (`--ui textual` with a filepath), the Textual comman
 Additional quick bindings in report view:
 - `r` for rescan current mode
 - `1` / `2` / `3` for mode switch + rescan
+
+### 10.6 Settings Persistence
+
+User-facing UI preferences are stored in `settings.conf` (JSON, repository root).
+
+Current persisted preference:
+- `theme`: Textual theme selected via command palette
+
+Behavior:
+- on Textual app startup (workspace/report), saved theme is loaded and applied if available
+- on theme change, new value is written back to `settings.conf`
 
 ## 11. Textual Workspace Command Surface
 

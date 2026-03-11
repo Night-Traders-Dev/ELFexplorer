@@ -1,6 +1,8 @@
 import shlex
 from datetime import datetime, timezone
 
+from settings import load_theme_preference, save_theme_preference
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -89,6 +91,17 @@ def run_textual_workspace(callbacks):
             self.current_reports = []
             self.last_report = None
 
+        def _apply_saved_theme(self):
+            saved_theme = load_theme_preference()
+            if saved_theme in self.available_themes and self.theme != saved_theme:
+                self.theme = saved_theme
+
+        def watch_theme(self, theme: str):
+            try:
+                save_theme_preference(theme)
+            except OSError:
+                pass
+
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
             with Vertical():
@@ -104,6 +117,7 @@ def run_textual_workspace(callbacks):
             yield Footer()
 
         def on_mount(self):
+            self._apply_saved_theme()
             self._log("ELFexplorer Textual Workspace ready.")
             self._log("Type [bold]help[/bold] for command details.")
 
