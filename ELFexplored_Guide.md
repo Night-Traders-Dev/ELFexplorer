@@ -290,10 +290,12 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
 - Markdown export command
 - PDF export command
+- editor workbench command (`Report: Open Editor Workbench`)
 - rescan command using current mode
 - mode-switch-and-rescan commands (`general`, `important`, `detailed`)
 
 Additional quick bindings in report view:
+- `e` for opening the split-pane editor workbench
 - `r` for rescan current mode
 - `1` / `2` / `3` for mode switch + rescan
 

@@ -267,12 +267,14 @@ Inside the Textual report viewer (`--ui textual` with a file path), use `Ctrl+P`
 Custom report commands include:
 - `Report: Export Markdown`
 - `Report: Export PDF`
+- `Report: Open Editor Workbench`
 - `Report: Rescan Current Mode`
 - `Report: Mode General + Rescan`
 - `Report: Mode Important + Rescan`
 - `Report: Mode Detailed + Rescan`
 
 Quick keys in report view:
+- `e`: open split-pane editor workbench for current binary
 - `r`: rescan current mode
 - `1`: switch to `general` and rescan
 - `2`: switch to `important` and rescan

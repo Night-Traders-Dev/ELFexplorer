@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
+from edit import ElfBinaryEditor, ElfEditError
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
 from settings import load_theme_preference, save_theme_preference
@@ -54,6 +55,16 @@ def default_report_export_path(
     return target_dir / f"{safe_stem}-{mode}-{timestamp}{extension}"
 
 
+def open_report_editor(report: Dict):
+    file_value = report.get("file")
+    if not file_value:
+        raise ValueError("Current report has no source file path.")
+    path = Path(str(file_value)).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"Binary not found: {path}")
+    return ElfBinaryEditor(path)
+
+
 def run_textual_report(report: Dict):
     from textual.app import App, ComposeResult, SystemCommand
     from textual.containers import Container, VerticalScroll
@@ -89,6 +100,7 @@ def run_textual_report(report: Dict):
         BINDINGS = [
             ("q", "quit", "Quit"),
             ("r", "rescan_current_mode", "Rescan"),
+            ("e", "open_editor_workbench", "Editor"),
             ("1", "set_mode_general", "Mode: General"),
             ("2", "set_mode_important", "Mode: Important"),
             ("3", "set_mode_detailed", "Mode: Detailed"),
@@ -159,6 +171,11 @@ def run_textual_report(report: Dict):
                 "Report: Mode Detailed + Rescan",
                 "Switch mode to detailed and rescan current file",
                 self.action_set_mode_detailed,
+            )
+            yield SystemCommand(
+                "Report: Open Editor Workbench",
+                "Open split-pane editor workbench for current binary",
+                self.action_open_editor_workbench,
             )
 
         def _fill_table(self, table_id: str, title: str, scores: Dict[str, int]):
@@ -242,6 +259,19 @@ def run_textual_report(report: Dict):
 
         def action_set_mode_detailed(self):
             self._rescan(mode="detailed")
+
+        def action_open_editor_workbench(self):
+            try:
+                editor = open_report_editor(self.report)
+                from ui.textual_editor import EditorWorkbenchScreen
+
+                self.push_screen(EditorWorkbenchScreen.build(editor))
+            except (ValueError, FileNotFoundError, ElfEditError) as exc:
+                self.notify(
+                    f"Editor unavailable for this file: {exc}",
+                    title="Editor",
+                    severity="error",
+                )
 
         def on_mount(self) -> None:
             self._apply_saved_theme()
