@@ -107,6 +107,17 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
         if name.startswith("go.func.") or name.startswith("runtime.") or name.startswith("type.") or name.startswith("go.itab."):
             scores["Go"] += 2
 
+        if name.startswith("dart_"):
+            scores["Dart"] += 3
+        if name.startswith("dart") and ("isolate" in name or "snapshot" in name):
+            scores["Dart"] += 2
+
+        if name.startswith("__zig_") or name.startswith("zig_") or "ziglang" in name:
+            scores["Zig"] += 3
+
+        if "coreclr" in name or "mono_" in name or "hostfxr" in name or "dotnet" in name or "mscorlib" in name:
+            scores["C#"] += 3
+
         if name.startswith("_z") and "rust" not in name and not name.startswith("_zn"):
             scores["C++"] += 2
         if "std::" in name or "__cxx" in name or "typeinfo" in name:
@@ -124,7 +135,7 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             scores["Ada"] += 3
         if "_gfortran" in name:
             scores["Fortran"] += 3
-        if "nimrtl" in name or "nim_gc" in name:
+        if "nimrtl" in name or "nim_gc" in name or "nimmain" in name or "niminit" in name:
             scores["Nim"] += 3
         if "swift" in name:
             scores["Swift"] += 3

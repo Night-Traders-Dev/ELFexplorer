@@ -3,14 +3,18 @@ import re
 from symbols.elfsymbols import scan_symbols
 
 SUPPORTED_LANGUAGES = (
+    "ASM",
     "C",
     "C++",
+    "C#",
     "Rust",
     "Go",
+    "Dart",
     "D",
     "Ada",
     "Fortran",
     "Nim",
+    "Zig",
     "Swift",
     "Java",
     "Python",
@@ -28,11 +32,14 @@ NOTE_SECTIONS = {
     ".note.sagelang": "SageLang",
 }
 
+COMPILER_HEURISTICS = ("GCC", "Clang")
+
 SAGELANG_STRING_SCAN_SECTIONS = (
     ".rodata",
     ".strtab",
     ".dynstr",
     ".debug_str",
+    ".comment",
 )
 
 SAGELANG_RUNTIME_STRINGS = (
@@ -53,10 +60,61 @@ SAGELANG_STRONG_STRING_MARKERS = (
 
 SAGELANG_TOKEN_PATTERN = re.compile(rb"(?<![a-z0-9_])sage_[a-z0-9_]+")
 SAGELANG_GENERATED_C_PATTERN = re.compile(rb"(?<![a-z0-9_])sagec_[0-9]+\.c(?![a-z0-9_])")
+DART_TOKEN_PATTERN = re.compile(rb"(?<![a-z0-9_])dart_[a-z0-9_]+")
+ZIG_TOKEN_PATTERN = re.compile(rb"(?<![a-z0-9_])(?:__)?zig_[a-z0-9_]+")
+
+DART_STRONG_MARKERS = (
+    b"dart_initialize",
+    b"dart_createisolategroup",
+    b"dart_loadscriptfromkernel",
+    b"dart_createappaotsnapshotasassembly",
+    b"dart_versionstring",
+)
+
+CSHARP_STRING_MARKERS = (
+    b"system.private.corelib",
+    b"microsoft.netcore.app",
+    b"coreclr",
+    b"hostfxr",
+    b"hostpolicy",
+    b"mono",
+    b"dotnet",
+    b"mscorlib",
+)
+
+NIM_STRING_MARKERS = (
+    b"nimmain",
+    b"nimmaininner",
+    b"nimrtl",
+    b"nim_gc",
+    b"nimcache",
+)
+
+ZIG_STRING_MARKERS = (
+    b"ziglang",
+    b"__zig_",
+    b"zig_stack",
+)
 
 
 def _empty_scores():
     return {language: 0 for language in SUPPORTED_LANGUAGES}
+
+
+def _empty_compiler_scores():
+    return {compiler: 0 for compiler in COMPILER_HEURISTICS}
+
+
+def _read_section_data(elf, section_name, max_bytes=262144):
+    section = elf.get_section_by_name(section_name)
+    if not section:
+        return None
+
+    try:
+        return section.data()[:max_bytes].lower()
+    except Exception as exc:
+        print(f"Error reading {section_name}: {exc}")
+        return None
 
 
 def _score_comment_section(elf, scores):
@@ -92,6 +150,12 @@ def _score_comment_section(elf, scores):
             scores["Python"] += 3
         if "sagelang" in data or "sage compiler" in data:
             scores["SageLang"] += 6
+        if "zig" in data or "ziglang" in data:
+            scores["Zig"] += 4
+        if "dart" in data:
+            scores["Dart"] += 2
+        if "dotnet" in data or "coreclr" in data or "mono" in data:
+            scores["C#"] += 3
     except Exception as exc:
         print(f"Error reading .comment section: {exc}")
 
@@ -142,6 +206,14 @@ def _score_dynamic_section(elf, scores):
                 scores["Python"] += 3
             if "libsage" in needed or "sagelang" in needed:
                 scores["SageLang"] += 4
+            if "coreclr" in needed or "hostfxr" in needed or "hostpolicy" in needed or "mono" in needed:
+                scores["C#"] += 6
+            if "libdart" in needed:
+                scores["Dart"] += 6
+            if "libnim" in needed:
+                scores["Nim"] += 4
+            if "libzig" in needed:
+                scores["Zig"] += 4
 
         # Plain libc-only dynamically linked binaries are usually C/asm programs.
         if needed_libs == {"libc.so.6"}:
@@ -170,6 +242,81 @@ def _score_symbol_tables(elf, scores):
     return symtab, dynsym
 
 
+def _collect_symbol_names(symtab, dynsym):
+    names = set()
+    for section in (symtab, dynsym):
+        if not section:
+            continue
+        try:
+            for symbol in section.iter_symbols():
+                name = symbol.name.lower()
+                if name:
+                    names.add(name)
+        except Exception as exc:
+            print(f"Error collecting symbol names: {exc}")
+    return names
+
+
+def _score_general_language_strings(elf, scores):
+    dart_markers = set()
+    csharp_markers = set()
+    nim_markers = set()
+    zig_markers = set()
+    dart_token_count = 0
+    zig_token_count = 0
+
+    for section_name in SAGELANG_STRING_SCAN_SECTIONS:
+        data = _read_section_data(elf, section_name)
+        if not data:
+            continue
+
+        for marker in DART_STRONG_MARKERS:
+            if marker in data:
+                dart_markers.add(marker)
+        for marker in CSHARP_STRING_MARKERS:
+            if marker in data:
+                csharp_markers.add(marker)
+        for marker in NIM_STRING_MARKERS:
+            if marker in data:
+                nim_markers.add(marker)
+        for marker in ZIG_STRING_MARKERS:
+            if marker in data:
+                zig_markers.add(marker)
+
+        dart_token_count += len(DART_TOKEN_PATTERN.findall(data))
+        zig_token_count += len(ZIG_TOKEN_PATTERN.findall(data))
+
+    if len(dart_markers) >= 2:
+        scores["Dart"] += 8
+    elif len(dart_markers) >= 1:
+        scores["Dart"] += 4
+
+    if dart_token_count >= 20:
+        scores["Dart"] += 10
+    elif dart_token_count >= 6:
+        scores["Dart"] += 6
+    elif dart_token_count >= 2:
+        scores["Dart"] += 3
+
+    if len(csharp_markers) >= 3:
+        scores["C#"] += 8
+    elif len(csharp_markers) >= 1:
+        scores["C#"] += 4
+
+    if len(nim_markers) >= 2:
+        scores["Nim"] += 5
+    elif len(nim_markers) >= 1:
+        scores["Nim"] += 2
+
+    if len(zig_markers) >= 1:
+        scores["Zig"] += 4
+
+    if zig_token_count >= 8:
+        scores["Zig"] += 6
+    elif zig_token_count >= 2:
+        scores["Zig"] += 3
+
+
 def _score_sagelang_strings(elf, scores):
     runtime_hits = set()
     strong_hits = set()
@@ -177,14 +324,8 @@ def _score_sagelang_strings(elf, scores):
     sage_substring_count = 0
 
     for section_name in SAGELANG_STRING_SCAN_SECTIONS:
-        section = elf.get_section_by_name(section_name)
-        if not section:
-            continue
-
-        try:
-            data = section.data()[:262144].lower()
-        except Exception as exc:
-            print(f"Error reading {section_name}: {exc}")
+        data = _read_section_data(elf, section_name)
+        if not data:
             continue
 
         for marker in SAGELANG_RUNTIME_STRINGS:
@@ -258,6 +399,12 @@ def _score_debug_info(elf, scores):
             scores["Python"] += 2
         if b"sagelang" in data or b"sage compiler" in data:
             scores["SageLang"] += 5
+        if b"dart_" in data or b"dart " in data:
+            scores["Dart"] += 3
+        if b"zig" in data:
+            scores["Zig"] += 2
+        if b"coreclr" in data or b"dotnet" in data or b"mono" in data:
+            scores["C#"] += 3
     except Exception as exc:
         print(f"Error reading .debug_info: {exc}")
 
@@ -286,6 +433,106 @@ def _score_section_names(elf, scores):
             scores["Python"] += 2
         if section_name in [".note.sagelang", ".sagelang", ".sage"]:
             scores["SageLang"] += 4
+        if section_name in [".note.dart", ".dart", ".dart_aot"]:
+            scores["Dart"] += 4
+        if section_name in [".cil", ".net", ".dotnet"]:
+            scores["C#"] += 4
+        if section_name in [".zig", ".zig_info"]:
+            scores["Zig"] += 4
+
+
+def _score_asm_patterns(elf, symtab, dynsym, scores):
+    symbol_names = _collect_symbol_names(symtab, dynsym)
+    has_start = "_start" in symbol_names
+    has_main = "main" in symbol_names
+    has_dynamic = elf.get_section_by_name(".dynamic") is not None
+    has_interp = elf.get_section_by_name(".interp") is not None
+    section_count = sum(1 for _ in elf.iter_sections())
+
+    if has_start and not has_main:
+        scores["ASM"] += 3
+
+    if has_start and not has_main and not has_dynamic and not has_interp:
+        scores["ASM"] += 8
+
+    if has_start and not has_main and section_count <= 10:
+        scores["ASM"] += 6
+
+    if has_main:
+        scores["ASM"] = max(0, scores["ASM"] - 2)
+
+
+def _score_compiler_comment(elf, compiler_scores):
+    data = _read_section_data(elf, ".comment", max_bytes=65536)
+    if not data:
+        return
+
+    if b"clang" in data:
+        compiler_scores["Clang"] += 8
+    if b"gcc" in data or b"gnu" in data:
+        compiler_scores["GCC"] += 6
+
+
+def _score_compiler_debug_info(elf, compiler_scores):
+    data = _read_section_data(elf, ".debug_info", max_bytes=65536)
+    if not data:
+        return
+
+    if b"clang" in data or b"llvm" in data:
+        compiler_scores["Clang"] += 4
+    if b"gcc" in data or b"gnu" in data:
+        compiler_scores["GCC"] += 4
+
+
+def _score_compiler_symbols(elf, compiler_scores):
+    symbols = _collect_symbol_names(elf.get_section_by_name(".symtab"), elf.get_section_by_name(".dynsym"))
+    if not symbols:
+        return
+
+    if "__clang_call_terminate" in symbols or any(name.startswith("__llvm_") for name in symbols):
+        compiler_scores["Clang"] += 4
+
+    if any("gnu" in name for name in symbols):
+        compiler_scores["GCC"] += 1
+
+
+def _score_compiler_dynamic(elf, compiler_scores):
+    dynamic = elf.get_section_by_name(".dynamic")
+    if not dynamic:
+        return
+
+    try:
+        for tag in dynamic.iter_tags():
+            if tag.entry.d_tag != "DT_NEEDED":
+                continue
+            needed = tag.needed.lower()
+            if "libc++" in needed:
+                compiler_scores["Clang"] += 2
+            if "libstdc++" in needed:
+                compiler_scores["GCC"] += 1
+    except Exception as exc:
+        print(f"Error processing dynamic section for compiler detection: {exc}")
+
+
+def detect_compiler(elf):
+    compiler_scores = _empty_compiler_scores()
+    _score_compiler_comment(elf, compiler_scores)
+    _score_compiler_debug_info(elf, compiler_scores)
+    _score_compiler_symbols(elf, compiler_scores)
+    _score_compiler_dynamic(elf, compiler_scores)
+
+    print("Compiler detection scores:")
+    for compiler, score in compiler_scores.items():
+        print(f"  {compiler}: {score}")
+
+    max_score = max(compiler_scores.values())
+    top_compilers = [compiler for compiler, score in compiler_scores.items() if score == max_score and score > 0]
+
+    if len(top_compilers) == 1:
+        return top_compilers[0]
+    if len(top_compilers) > 1:
+        return "Ambiguous: " + "/".join(top_compilers)
+    return "Unknown"
 
 
 def detect_source_language(elf):
@@ -299,9 +546,11 @@ def detect_source_language(elf):
     _score_note_sections(elf, scores)
     _score_dynamic_section(elf, scores)
     symtab, dynsym = _score_symbol_tables(elf, scores)
+    _score_general_language_strings(elf, scores)
     _score_sagelang_strings(elf, scores)
     _score_debug_info(elf, scores)
     _score_section_names(elf, scores)
+    _score_asm_patterns(elf, symtab, dynsym, scores)
 
     has_symbols = False
     if symtab and symtab.num_symbols() > 0:
@@ -325,4 +574,4 @@ def detect_source_language(elf):
         return top_languages[0]
     if len(top_languages) > 1:
         return "Ambiguous: " + "/".join(top_languages)
-    return "C"
+    return "Unknown"

@@ -15,7 +15,8 @@ ELFexplorer is now split into maintainable modules:
 - Displays ELF headers with parsed `e_ident` values
 - Prints program header segments with virtual/physical address mapping
 - Outputs detailed section headers with names, types, sizes, and flags
-- Heuristically detects source language (C, C++, Rust, Go, D, Ada, Fortran, Nim, Swift, Java, Python, SageLang)
+- Heuristically detects source language (ASM, C, C++, C#, Rust, Go, Dart, D, Ada, Fortran, Nim, Zig, Swift, Java, Python, SageLang)
+- Heuristically detects likely compiler toolchain (GCC or Clang when evidence is present)
 - Modularized for easier updates and extension
 - Supports 64-bit ELF files (currently tested on AArch64/ARM64)
 - Compatible with Python 3.12+
@@ -55,7 +56,8 @@ Detailed section headers including .text, .data, .bss, .rodata, .dynsym, .debug_
 • ELF Header – Identifies basic ELF metadata (architecture, type, entry point, etc.)
 • Program Headers – Maps how the binary will be loaded into memory
 • Section Headers – Contains code, data, symbol tables, debug info, etc.
-• Source Language Detection – Heuristics for C, C++, Rust, Go, D, Ada, Fortran, Nim, Swift, Java, Python, SageLang
+• Source Language Detection – Heuristics for ASM, C, C++, C#, Rust, Go, Dart, D, Ada, Fortran, Nim, Zig, Swift, Java, Python, SageLang
+• Compiler Detection – Heuristics for GCC vs Clang
 
 
 ## Requirements

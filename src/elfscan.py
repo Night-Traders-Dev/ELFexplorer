@@ -17,7 +17,7 @@ import argparse
 
 from elftools.elf.elffile import ELFFile
 
-from detect.elfdetect import detect_source_language
+from detect.elfdetect import detect_compiler, detect_source_language
 from info.elfinfo import print_detailed_info, print_general_info, print_important_info
 
 
@@ -26,7 +26,9 @@ def analyze_elf(filepath, output_mode):
         with open(filepath, "rb") as file:
             elf = ELFFile(file)
             source_language = detect_source_language(elf)
+            compiler = detect_compiler(elf)
             print(f"Detected Source Language (heuristic): {source_language}\n")
+            print(f"Detected Compiler (heuristic): {compiler}\n")
             if output_mode == "general":
                 print_general_info(elf)
             elif output_mode == "important":
