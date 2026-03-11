@@ -1,5 +1,8 @@
 import struct
+import subprocess
+import tempfile
 from pathlib import Path
+from shutil import which
 
 
 class ElfEditError(ValueError):
@@ -319,6 +322,19 @@ class ElfBinaryEditor:
             )
         struct.pack_into(fmt, self._data, offset, *values)
 
+    def _require_range(self, offset, length):
+        offset = int(offset)
+        length = int(length)
+        if offset < 0:
+            raise ElfEditError("Offset must be >= 0.")
+        if length < 0:
+            raise ElfEditError("Length must be >= 0.")
+        if offset + length > len(self._data):
+            raise ElfEditError(
+                f"Requested range exceeds file size: offset=0x{offset:x}, length={length}, size={len(self._data)}"
+            )
+        return offset, length
+
     def get_elf_header(self):
         fmt = self._elf_header_fmt()
         values = self._read_struct(16, fmt)
@@ -499,6 +515,158 @@ class ElfBinaryEditor:
             for index in range(header["e_shnum"])
         ]
 
+    def read_bytes(self, offset, length):
+        offset, length = self._require_range(offset, length)
+        return bytes(self._data[offset : offset + length])
+
+    def write_byte(self, offset, value):
+        offset, _ = self._require_range(offset, 1)
+        numeric = int(value)
+        self._assert_uint(numeric, 8, "byte")
+        old = self._data[offset]
+        self._data[offset] = numeric
+        self._record_change("hex", offset, "byte", old, numeric)
+        return old, numeric
+
+    def write_bytes(self, offset, payload):
+        offset = int(offset)
+        if offset < 0:
+            raise ElfEditError("Offset must be >= 0.")
+        payload_bytes = bytes(payload)
+        if not payload_bytes:
+            raise ElfEditError("Payload must contain at least one byte.")
+        end = offset + len(payload_bytes)
+        if end > len(self._data):
+            raise ElfEditError(
+                f"Payload write exceeds file size: offset=0x{offset:x}, bytes={len(payload_bytes)}, size={len(self._data)}"
+            )
+        old = bytes(self._data[offset:end])
+        self._data[offset:end] = payload_bytes
+        self._record_change("hex", offset, "bytes", old.hex(), payload_bytes.hex())
+        return old, payload_bytes
+
+    @staticmethod
+    def _decode_hex_text(hex_text):
+        text = str(hex_text).strip()
+        if not text:
+            raise ElfEditError("Hex payload cannot be empty.")
+
+        parts = [token for token in text.replace(",", " ").split() if token]
+        if parts and all(part.lower().startswith("0x") for part in parts):
+            values = []
+            for part in parts:
+                numeric = int(part, 0)
+                if numeric < 0 or numeric > 0xFF:
+                    raise ElfEditError(f"Byte literal out of range: {part}")
+                values.append(numeric)
+            return bytes(values)
+
+        try:
+            return bytes.fromhex(text)
+        except ValueError as exc:
+            raise ElfEditError(
+                "Invalid hex payload. Use forms like 'de ad be ef' or '0xDE 0xAD 0xBE 0xEF'."
+            ) from exc
+
+    def patch_hex(self, offset, hex_text):
+        payload = self._decode_hex_text(hex_text)
+        return self.write_bytes(offset, payload)
+
+    def write_ascii(self, offset, text, encoding="utf-8"):
+        payload = str(text).encode(encoding)
+        if not payload:
+            raise ElfEditError("ASCII/text payload cannot be empty.")
+        return self.write_bytes(offset, payload)
+
+    @staticmethod
+    def _looks_like_instruction_line(line):
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            return False
+        head = stripped.split(":", 1)[0]
+        return bool(head) and all(ch in "0123456789abcdefABCDEF" for ch in head)
+
+    def _render_disassembly_snippet(self, full_text, max_lines):
+        lines = full_text.splitlines()
+        if max_lines is None or max_lines <= 0:
+            return "\n".join(lines).rstrip()
+
+        rendered = []
+        instruction_count = 0
+        for line in lines:
+            rendered.append(line)
+            if self._looks_like_instruction_line(line):
+                instruction_count += 1
+                if instruction_count >= max_lines:
+                    break
+        if instruction_count >= max_lines:
+            rendered.append("... [truncated]")
+        return "\n".join(rendered).rstrip()
+
+    @staticmethod
+    def _objdump_path():
+        return which("objdump")
+
+    def disassembler_backend(self):
+        return "objdump" if self._objdump_path() else "unavailable"
+
+    def disassemble(
+        self,
+        section=".text",
+        max_lines=120,
+        start_address=None,
+        stop_address=None,
+        syntax="intel",
+    ):
+        objdump = self._objdump_path()
+        if not objdump:
+            raise ElfEditError("Disassembler unavailable: 'objdump' not found in PATH.")
+        if (
+            start_address is not None
+            and stop_address is not None
+            and int(stop_address) <= int(start_address)
+        ):
+            raise ElfEditError("stop_address must be greater than start_address.")
+
+        with tempfile.NamedTemporaryFile(prefix="elfexplorer-disasm-", suffix=".elf", delete=False) as tmp:
+            tmp.write(bytes(self._data))
+            tmp_path = Path(tmp.name)
+
+        try:
+            command = [objdump, "-d"]
+            if syntax:
+                command.extend(["-M", str(syntax)])
+            if section and str(section).lower() != "all":
+                command.extend(["-j", str(section)])
+            if start_address is not None:
+                command.append(f"--start-address={int(start_address)}")
+            if stop_address is not None:
+                command.append(f"--stop-address={int(stop_address)}")
+            command.append(str(tmp_path))
+
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            stdout = completed.stdout or ""
+            stderr = (completed.stderr or "").strip()
+            if completed.returncode != 0 and not stdout.strip():
+                detail = f" {stderr}" if stderr else ""
+                raise ElfEditError(f"Disassembly failed with code {completed.returncode}.{detail}")
+            rendered = self._render_disassembly_snippet(stdout, max_lines=max_lines)
+            if rendered:
+                return rendered
+            if stderr:
+                return f"No disassembly output.\n{stderr}"
+            return "No disassembly output."
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def _normalize_section_header_field(self, field):
         key = self._normalize(field)
         if key in self.SECTION_HEADER_ALIASES:
@@ -577,4 +745,5 @@ class ElfBinaryEditor:
             "section_headers": header["e_shnum"],
             "dirty": self.is_dirty,
             "change_count": self.change_count,
+            "disassembler": self.disassembler_backend(),
         }

@@ -31,6 +31,7 @@ class ElfBinaryEditorTests(unittest.TestCase):
         self.assertIn(status["elf_class"], {32, 64})
         self.assertIn(status["endianness"], {"little", "big"})
         self.assertGreater(status["size"], 0)
+        self.assertIn(status["disassembler"], {"objdump", "unavailable"})
         self.assertIn("e_machine", header)
         self.assertIn("e_phnum", header)
         self.assertIn("e_shnum", header)
@@ -53,6 +54,38 @@ class ElfBinaryEditorTests(unittest.TestCase):
             editor.save(out)
             reopened = ElfBinaryEditor(out)
             self.assertEqual(reopened.get_elf_header()["e_flags"], updated)
+
+    def test_write_byte_round_trip(self):
+        editor = self._editor_or_skip()
+        offset = 0x10
+        old_byte = editor.read_bytes(offset, 1)
+        replacement = 0x90 if old_byte[0] != 0x90 else 0x91
+        editor.write_byte(offset, replacement)
+        self.assertEqual(editor.read_bytes(offset, 1), bytes([replacement]))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out = Path(tmp_dir) / "edited-byte.elf"
+            editor.save(out)
+            reopened = ElfBinaryEditor(out)
+            self.assertEqual(reopened.read_bytes(offset, 1), bytes([replacement]))
+
+    def test_patch_hex_and_ascii_round_trip(self):
+        editor = self._editor_or_skip()
+        original = editor.read_bytes(0x20, 6)
+        editor.patch_hex(0x20, "de ad be ef")
+        editor.write_ascii(0x24, "EL")
+        self.assertEqual(editor.read_bytes(0x20, 4), bytes.fromhex("de ad be ef"))
+        self.assertEqual(editor.read_bytes(0x24, 2), b"EL")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out = Path(tmp_dir) / "edited-hex-ascii.elf"
+            editor.save(out)
+            reopened = ElfBinaryEditor(out)
+            self.assertEqual(reopened.read_bytes(0x20, 4), bytes.fromhex("de ad be ef"))
+            self.assertEqual(reopened.read_bytes(0x24, 2), b"EL")
+            # Confirm we can restore prior bytes in-memory and keep editor usable.
+            reopened.write_bytes(0x20, original)
+            self.assertEqual(reopened.read_bytes(0x20, 6), original)
 
     def test_set_program_header_field_round_trip(self):
         editor = self._editor_or_skip()
@@ -97,6 +130,13 @@ class ElfBinaryEditorTests(unittest.TestCase):
         self.assertFalse(editor.is_dirty)
         self.assertEqual(editor.change_count, 0)
         self.assertEqual(editor.get_elf_header()["e_flags"], original)
+
+    def test_disassemble_returns_text_when_available(self):
+        editor = self._editor_or_skip()
+        if editor.disassembler_backend() == "unavailable":
+            self.skipTest("objdump not available in PATH")
+        text = editor.disassemble(section=".text", max_lines=25)
+        self.assertTrue(text.strip())
 
 
 if __name__ == "__main__":

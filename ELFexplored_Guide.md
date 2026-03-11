@@ -120,7 +120,8 @@ Outputs are available as:
 - `src/edit/elf_editor.py`
   - safe in-memory ELF editing backend
   - ELF/program/section header field mutation
-  - disassembler-style hex dump rendering
+  - disassembler-style hex dump rendering + byte patching
+  - integrated disassembly via `objdump` backend
   - change tracking + revert + save
 - `src/reporting/persistence.py`
   - JSON persistence APIs
@@ -330,6 +331,11 @@ Workspace commands:
 - `edit-show-shdr <index>`
 - `edit-set-shdr <index> <field> <value>`
 - `edit-hex [offset] [length] [width]`
+- `edit-poke <offset> <byte>`
+- `edit-patch <offset> <hex-bytes...>`
+- `edit-write-ascii <offset> <text>`
+- `edit-disasm [section] [max_lines]`
+- `edit-disasm-range <start> <stop> [section] [max_lines]`
 - `edit-diff`
 - `edit-revert`
 - `edit-save [path]`
@@ -354,6 +360,11 @@ Safety and constraints:
 Hex viewer:
 - `edit-hex` prints offset/byte/ascii rows similar to disassembler hex panes
 - accepts decimal or `0x` numeric literals for offset/length/width
+- byte-level patching is supported through `edit-poke`, `edit-patch`, and `edit-write-ascii`
+
+Disassembler:
+- `edit-disasm` and `edit-disasm-range` render section/range disassembly in Textual workspace
+- current backend uses GNU `objdump` when available
 
 ## 12. Report Layout Strategy
 

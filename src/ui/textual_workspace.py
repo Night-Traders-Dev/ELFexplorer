@@ -128,6 +128,8 @@ def run_textual_workspace(callbacks):
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
                     "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
+                    "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
+                    "edit-disasm [section] [max_lines] | edit-disasm-range <start> <stop> [section] [max_lines]\n"
                     "edit-set-elf <field> <value> | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>\n"
                     "edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value> | edit-diff | edit-revert | edit-save [path] | edit-close | quit",
                     id="help",
@@ -179,6 +181,7 @@ def run_textual_workspace(callbacks):
             self._log(f"  section_headers: {status['section_headers']}")
             self._log(f"  dirty: {status['dirty']}")
             self._log(f"  change_count: {status['change_count']}")
+            self._log(f"  disassembler: {status['disassembler']}")
 
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()
@@ -212,7 +215,11 @@ def run_textual_workspace(callbacks):
                     self._log("edit-show-elf | edit-set-elf <field> <value>")
                     self._log("edit-list-phdr | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>")
                     self._log("edit-list-shdr | edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value>")
+                    self._log("edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...>")
+                    self._log("edit-write-ascii <offset> <text>")
                     self._log("edit-hex [offset] [length] [width] | edit-diff | edit-revert | edit-save [path]")
+                    self._log("edit-disasm [section] [max_lines]")
+                    self._log("edit-disasm-range <start> <stop> [section] [max_lines]")
                     self._log("list-saved | show | quit")
                     return
 
@@ -513,6 +520,94 @@ def run_textual_workspace(callbacks):
                         f"[bold]Hex view:[/bold] offset=0x{offset:x} length={length} width={width}"
                     )
                     for line in dump.splitlines():
+                        self._log(f"  {line}")
+                    return
+
+                if command == "edit-poke":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 2:
+                        self._log("[red]Usage:[/red] edit-poke <offset> <byte>")
+                        return
+                    offset = _parse_int_literal(args[0], "offset")
+                    value = _parse_int_literal(args[1], "byte")
+                    old, new = editor.write_byte(offset, value)
+                    self._log(
+                        "[green]Patched byte:[/green] "
+                        f"offset=0x{offset:x} {_fmt_value(old)} -> {_fmt_value(new)}"
+                    )
+                    return
+
+                if command == "edit-patch":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 2:
+                        self._log("[red]Usage:[/red] edit-patch <offset> <hex-bytes...>")
+                        return
+                    offset = _parse_int_literal(args[0], "offset")
+                    hex_text = " ".join(args[1:])
+                    old, new = editor.patch_hex(offset, hex_text)
+                    self._log(
+                        "[green]Patched bytes:[/green] "
+                        f"offset=0x{offset:x} old={old.hex()} new={new.hex()}"
+                    )
+                    return
+
+                if command == "edit-write-ascii":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 2:
+                        self._log("[red]Usage:[/red] edit-write-ascii <offset> <text>")
+                        return
+                    offset = _parse_int_literal(args[0], "offset")
+                    text = " ".join(args[1:])
+                    old, new = editor.write_ascii(offset, text)
+                    self._log(
+                        "[green]Wrote text bytes:[/green] "
+                        f"offset=0x{offset:x} old={old.hex()} new={new.hex()}"
+                    )
+                    return
+
+                if command == "edit-disasm":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    section = args[0] if len(args) >= 1 else ".text"
+                    max_lines = _parse_int_literal(args[1], "max_lines") if len(args) >= 2 else 120
+                    text = editor.disassemble(section=section, max_lines=max_lines)
+                    self._log(f"[bold]Disassembly:[/bold] section={section} max_lines={max_lines}")
+                    for line in text.splitlines():
+                        self._log(f"  {line}")
+                    return
+
+                if command == "edit-disasm-range":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 2:
+                        self._log(
+                            "[red]Usage:[/red] edit-disasm-range <start> <stop> [section] [max_lines]"
+                        )
+                        return
+                    start_address = _parse_int_literal(args[0], "start")
+                    stop_address = _parse_int_literal(args[1], "stop")
+                    section = args[2] if len(args) >= 3 else ".text"
+                    max_lines = _parse_int_literal(args[3], "max_lines") if len(args) >= 4 else 120
+                    text = editor.disassemble(
+                        section=section,
+                        start_address=start_address,
+                        stop_address=stop_address,
+                        max_lines=max_lines,
+                    )
+                    self._log(
+                        "[bold]Disassembly range:[/bold] "
+                        f"start=0x{start_address:x} stop=0x{stop_address:x} "
+                        f"section={section} max_lines={max_lines}"
+                    )
+                    for line in text.splitlines():
                         self._log(f"  {line}")
                     return
 

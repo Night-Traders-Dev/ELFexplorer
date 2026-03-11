@@ -26,7 +26,9 @@
   - modify ELF header fields
   - modify program header entries
   - modify section header entries
+  - edit raw bytes (`edit-poke`, `edit-patch`, `edit-write-ascii`)
   - view disassembler-style hex dump ranges
+  - disassemble ELF sections/ranges directly in Textual (`edit-disasm`, `edit-disasm-range`)
   - inspect pending edits, revert edits, and save edited binaries
 - Added Textual report command-palette actions (`Ctrl+P`) for:
   - exporting the current report to Markdown/PDF
@@ -201,6 +203,11 @@ The workspace supports:
   - `edit-list-phdr` / `edit-show-phdr <idx>` / `edit-set-phdr <idx> <field> <value>`
   - `edit-list-shdr` / `edit-show-shdr <idx>` / `edit-set-shdr <idx> <field> <value>`
   - `edit-hex [offset] [length] [width]`
+  - `edit-poke <offset> <byte>`
+  - `edit-patch <offset> <hex-bytes...>`
+  - `edit-write-ascii <offset> <text>`
+  - `edit-disasm [section] [max_lines]`
+  - `edit-disasm-range <start> <stop> [section] [max_lines]`
   - `edit-diff` / `edit-revert` / `edit-save [path]`
 
 If Textual is unavailable, use `--ui plain` with explicit CLI options.
@@ -216,6 +223,8 @@ edit-set-elf e_flags 0x1
 edit-list-phdr
 edit-show-shdr 1
 edit-hex 0x0 0x100 16
+edit-patch 0x40 de ad be ef
+edit-disasm .text 80
 edit-diff
 edit-save reports/hello_c.edited.elf
 ```
