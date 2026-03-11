@@ -6,6 +6,7 @@
 - structural ELF parsing
 - heuristic language inference
 - heuristic compiler inference
+- heuristic host build-system inference
 - corpus-based regression testing across architectures
 
 This project is intentionally heuristic-first. It does not claim perfect language attribution for every ELF. Instead, it provides defensible, inspectable evidence-based guesses.
@@ -15,8 +16,10 @@ This project is intentionally heuristic-first. It does not claim perfect languag
 For each ELF input, the CLI provides:
 - language scoring table
 - compiler scoring table
+- build-system scoring table
 - selected best language label
 - selected best compiler label
+- selected best build-system label
 - ELF metadata output in one of three modes
 
 Modes:
@@ -31,9 +34,20 @@ Modes:
   - structured and colorized report framing
   - invokes detection and metadata modules
 - `src/detect/elfdetect.py`
-  - scoring engine for languages and compilers
-  - detection decision logic
-  - score printing
+  - compatibility import path
+  - re-exports modular detectors
+- `src/detect/language/core.py`
+  - language detector orchestration and final tie-breaking
+- `src/detect/compiler.py`
+  - compiler detector orchestration and final tie-breaking
+- `src/detect/buildsystem.py`
+  - build-system detector orchestration and final tie-breaking
+- `src/detect/arch/`
+  - architecture/binary-shape heuristics (ASM-focused currently)
+- `src/detect/techniques/`
+  - grouped heuristic implementations by evidence type
+- `src/detect/constants.py` and `src/detect/utils.py`
+  - shared marker catalogs and reusable readers/helpers
 - `src/symbols/elfsymbols.py`
   - symbol-table heuristics
   - cross-language symbol markers and pattern checks
@@ -72,6 +86,10 @@ Compiler detection follows a similar but separate scoring pass and returns:
 - `Clang`
 - `Ambiguous: GCC/Clang`
 - `Unknown`
+
+Build-system detection follows another independent scoring pass and returns labels like:
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- or `Ambiguous: ...` / `Unknown`
 
 ## 5. Scoring Strategy
 
@@ -207,16 +225,30 @@ Compiler detection is separate from language detection.
 
 Evidence sources:
 - `.comment` (`GCC`, `clang`)
-- `.debug_info` (`gcc`, `gnu`, `llvm`, `clang`)
-- symbols (`__clang_call_terminate`, `__llvm_*`)
-- dynamic libs (`libc++` is a Clang-leaning hint; `libstdc++` a GCC-leaning hint)
+- DWARF compile-unit producers (`DW_AT_producer`)
+- `.GCC.command.line` and LLVM section-family hints
+- marker symbols (`__clang_call_terminate`, `__llvm_*`, `__gcov_*`)
+- dynamic libs (`libclang_rt`/`libc++` vs `libgcc`/`libstdc++`)
 
 Output:
 - strongest positive bucket wins
 - tie -> ambiguous
-- no signal -> unknown
+- weak/no signal -> unknown (minimum confidence threshold applied)
 
-## 8. CLI Visual Design
+## 8. Build-System Detection
+
+Build-system detection is intentionally best-effort and relies on embedded clues.
+
+Evidence sources:
+- debug/string path fragments (for example `CMakeFiles`, `meson-private`, `bazel-out`, `target/debug`)
+- note sections (for example `.note.go.buildid`)
+- language-runtime symbols and dynamic dependencies (Go, Dart/Flutter, .NET, Zig)
+
+Outputs include:
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- `Ambiguous: ...` or `Unknown`
+
+## 9. CLI Visual Design
 
 `src/elfscan.py` now prints structured blocks:
 - `ELF Scan Report`
@@ -230,8 +262,9 @@ Color/styling:
 - keeps parser-critical lines stable:
   - `Detected Source Language (heuristic): ...`
   - `Detected Compiler (heuristic): ...`
+  - `Detected Host Build System (heuristic): ...`
 
-## 9. Corpus Testing
+## 10. Corpus Testing
 
 `tests/test_elfscan_cli.py` validates corpus binaries by executing `elfscan.py` directly.
 
@@ -249,7 +282,7 @@ Verbosity levels:
 - Level 3: `-vvv`
 - Level 4: `-vvvv` (full captured output per binary)
 
-## 10. Unit Heuristic Testing
+## 11. Unit Heuristic Testing
 
 `tests/test_elfdetect_heuristics.py` uses fake ELF objects to isolate and validate:
 - ASM shape detection
@@ -258,13 +291,14 @@ Verbosity levels:
 - Zig marker detection
 - Nim symbol detection
 - GCC/Clang compiler inference
+- build-system inference basics
 
 Benefits:
 - fast execution
 - no dependency on external toolchains for every heuristic case
 - deterministic regression checks
 
-## 11. Current Boundaries and Tradeoffs
+## 12. Current Boundaries and Tradeoffs
 
 1. Heuristic confidence depends on available symbols/strings/sections.
 2. Stripped binaries reduce evidence quality.
@@ -272,7 +306,7 @@ Benefits:
 4. Some ecosystems share C/C++ runtime artifacts, requiring strong disambiguators.
 5. Compiler detection is best-effort and can be unknown/ambiguous.
 
-## 12. Extending to New Languages
+## 13. Extending to New Languages
 
 When adding a language:
 
@@ -285,7 +319,7 @@ When adding a language:
 7. Add focused unit tests in `test_elfdetect_heuristics.py`.
 8. Add corpus samples and CLI test expectations.
 
-## 13. Recommended Workflow for Heuristic Changes
+## 14. Recommended Workflow for Heuristic Changes
 
 1. Add or update binary samples under `test-bin/<arch>/`.
 2. Run:
@@ -295,7 +329,7 @@ When adding a language:
 5. Ensure tie handling stays explainable.
 6. Update README and this guide with any behavioral changes.
 
-## 14. Practical Commands
+## 15. Practical Commands
 
 Single binary scan:
 
@@ -321,7 +355,7 @@ High-verbosity corpus diagnostics:
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -vvvv
 ```
 
-## 15. Summary
+## 16. Summary
 
 `ELFexplorer` is an evidence-driven ELF fingerprinting framework with:
 - broad multi-language heuristics

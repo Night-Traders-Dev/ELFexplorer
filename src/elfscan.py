@@ -19,7 +19,7 @@ import sys
 
 from elftools.elf.elffile import ELFFile
 
-from detect.elfdetect import detect_compiler, detect_source_language
+from detect.elfdetect import detect_build_system, detect_compiler, detect_source_language
 from info.elfinfo import print_detailed_info, print_general_info, print_important_info
 
 STYLE_RESET = "\033[0m"
@@ -68,13 +68,16 @@ def analyze_elf(filepath, output_mode):
             print(_rule("Heuristic Scoring", FG_YELLOW))
             source_language = detect_source_language(elf)
             compiler = detect_compiler(elf)
+            build_system = detect_build_system(elf)
             print()
 
             print(_rule("Detection Summary", FG_GREEN))
             lang_label = _styled("Detected Source Language (heuristic):", STYLE_BOLD, FG_GREEN)
             comp_label = _styled("Detected Compiler (heuristic):", STYLE_BOLD, FG_GREEN)
+            build_label = _styled("Detected Host Build System (heuristic):", STYLE_BOLD, FG_GREEN)
             print(f"{lang_label} {source_language}")
             print(f"{comp_label} {compiler}\n")
+            print(f"{build_label} {build_system}\n")
 
             print(_rule("ELF Metadata", FG_CYAN))
             if output_mode == "general":

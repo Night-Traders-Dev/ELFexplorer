@@ -10,6 +10,9 @@ class ElfscanCorpusCLITests(unittest.TestCase):
     RED = "\033[91m"
     RESET = "\033[0m"
     DETECTED_LANGUAGE_PATTERN = re.compile(r"Detected Source Language \(heuristic\):\s*(.+)")
+    DETECTED_BUILD_SYSTEM_PATTERN = re.compile(
+        r"Detected Host Build System \(heuristic\):\s*(.+)"
+    )
     EXPECTED_CORPUS = {
         "aarch64": ("hello_asm", "hello_c", "hello_cpp", "hello_dart", "hello_go"),
         "arm32": ("hello_asm", "hello_c", "hello_cpp", "hello_dart", "hello_go"),
@@ -108,6 +111,10 @@ class ElfscanCorpusCLITests(unittest.TestCase):
 
         compiler_match = re.search(r"Detected Compiler \(heuristic\):\s*(.+)", output)
         detected_compiler = compiler_match.group(1).strip() if compiler_match else "Unknown"
+        build_system_match = self.DETECTED_BUILD_SYSTEM_PATTERN.search(output)
+        detected_build_system = (
+            build_system_match.group(1).strip() if build_system_match else "Unknown"
+        )
 
         if self.verbosity_level >= 1:
             print(
@@ -117,8 +124,9 @@ class ElfscanCorpusCLITests(unittest.TestCase):
 
         if self.verbosity_level >= 2:
             print(
-                f"  compiler={detected_compiler} exit_code={completed.returncode} "
-                f"path={binary}"
+                f"  compiler={detected_compiler} "
+                f"build_system={detected_build_system} "
+                f"exit_code={completed.returncode} path={binary}"
             )
 
         if self.verbosity_level >= 3:

@@ -6,6 +6,7 @@ It currently provides:
 - Structured ELF metadata reporting (general/important/detailed modes)
 - Heuristic source-language detection
 - Heuristic compiler detection (GCC vs Clang)
+- Heuristic host build-system detection
 - Corpus-driven validation over multi-architecture test binaries
 
 ## Supported Language Detection
@@ -36,10 +37,32 @@ Current compiler labels:
 - `Ambiguous: GCC/Clang`
 - `Unknown`
 
+## Build-System Detection
+
+Current host build-system labels:
+- `CMake`
+- `Meson`
+- `Bazel`
+- `Cargo`
+- `Ninja`
+- `Make`
+- `Autotools`
+- `MSBuild`
+- `Go Toolchain`
+- `Dart/Flutter`
+- `Zig Build`
+- `Ambiguous: ...`
+- `Unknown`
+
 ## Project Layout
 
 - `src/elfscan.py`: CLI entry point and formatted report output
-- `src/detect/elfdetect.py`: language/compiler scoring engine
+- `src/detect/elfdetect.py`: compatibility entrypoint re-exporting detectors
+- `src/detect/language/`: language detection orchestration
+- `src/detect/compiler.py`: compiler detection orchestration
+- `src/detect/buildsystem.py`: build-system detection orchestration
+- `src/detect/arch/`: architecture-shape heuristics (ASM-focused today)
+- `src/detect/techniques/`: section/symbol/string heuristic modules
 - `src/symbols/elfsymbols.py`: symbol-level heuristic scoring
 - `src/info/elfinfo.py`: ELF metadata display helpers
 - `tests/test_elfscan_cli.py`: corpus integration tests
@@ -75,7 +98,7 @@ python3 src/elfscan.py -m detailed test-bin/aarch64/hello_go
 The CLI prints:
 - A structured report header
 - Heuristic score sections
-- Language/compiler summary lines
+- Language/compiler/build-system summary lines
 - Selected ELF metadata block by mode
 
 If stdout is a TTY and `NO_COLOR` is not set, styled ANSI output is enabled automatically.
@@ -122,6 +145,7 @@ Detection is heuristic, not ground truth. It combines:
 - symbol-name patterns
 - dynamic dependency hints
 - debug/comment string hints
+- DWARF producer detection (for GCC/Clang inference)
 - runtime API marker strings
 - binary-shape rules (for ASM)
 
