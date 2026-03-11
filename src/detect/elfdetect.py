@@ -26,6 +26,29 @@ NOTE_SECTIONS = {
     ".note.sagelang": "SageLang",
 }
 
+SAGELANG_STRING_SCAN_SECTIONS = (
+    ".rodata",
+    ".strtab",
+    ".dynstr",
+    ".debug_str",
+)
+
+SAGELANG_RUNTIME_STRINGS = (
+    b"unhandled exception:",
+    b"runtime error: undefined variable",
+    b"runtime error: method call on non-instance.",
+    b"runtime error: no __class__ on instance.",
+    b"too many classes",
+)
+
+SAGELANG_STRONG_STRING_MARKERS = (
+    b"sage_try_stack",
+    b"sage_exception_value",
+    b"sage_method_table",
+    b"sage_class_registry",
+    b"sage_slot_undefined",
+)
+
 
 def _empty_scores():
     return {language: 0 for language in SUPPORTED_LANGUAGES}
@@ -134,6 +157,59 @@ def _score_symbol_tables(elf, scores):
     return symtab, dynsym
 
 
+def _score_sagelang_strings(elf, scores):
+    runtime_hits = set()
+    strong_hits = set()
+    sage_token_score = 0
+    sage_substring_count = 0
+
+    for section_name in SAGELANG_STRING_SCAN_SECTIONS:
+        section = elf.get_section_by_name(section_name)
+        if not section:
+            continue
+
+        try:
+            data = section.data()[:262144].lower()
+        except Exception as exc:
+            print(f"Error reading {section_name}: {exc}")
+            continue
+
+        for marker in SAGELANG_RUNTIME_STRINGS:
+            if marker in data:
+                runtime_hits.add(marker)
+
+        for marker in SAGELANG_STRONG_STRING_MARKERS:
+            if marker in data:
+                strong_hits.add(marker)
+
+        if b"sagelang" in data or b"sage compiler" in data:
+            sage_token_score += 2
+        if b"sagec_" in data and b".c" in data:
+            sage_token_score += 2
+
+        sage_substring_count += data.count(b"sage_")
+
+    if len(runtime_hits) >= 4:
+        scores["SageLang"] += 8
+    elif len(runtime_hits) >= 2:
+        scores["SageLang"] += 4
+
+    if len(strong_hits) >= 4:
+        scores["SageLang"] += 8
+    elif len(strong_hits) >= 2:
+        scores["SageLang"] += 4
+
+    if sage_token_score >= 4:
+        scores["SageLang"] += 8
+    elif sage_token_score >= 2:
+        scores["SageLang"] += 4
+
+    if sage_substring_count >= 20:
+        scores["SageLang"] += 8
+    elif sage_substring_count >= 8:
+        scores["SageLang"] += 4
+
+
 def _score_debug_info(elf, scores):
     debug_info_sec = elf.get_section_by_name(".debug_info")
     if not debug_info_sec:
@@ -206,6 +282,7 @@ def detect_source_language(elf):
     _score_note_sections(elf, scores)
     _score_dynamic_section(elf, scores)
     symtab, dynsym = _score_symbol_tables(elf, scores)
+    _score_sagelang_strings(elf, scores)
     _score_debug_info(elf, scores)
     _score_section_names(elf, scores)
 

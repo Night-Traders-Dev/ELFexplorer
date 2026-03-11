@@ -91,6 +91,77 @@ class DetectSourceLanguageTests(unittest.TestCase):
 
         self.assertEqual(self.detect(elf), "SageLang")
 
+    def test_detects_sagelang_from_runtime_symbol_cluster(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".symtab",
+                    symbols=[
+                        FakeSymbol("sage_mem_alloc"),
+                        FakeSymbol("sage_mem_free"),
+                        FakeSymbol("sage_struct_def"),
+                        FakeSymbol("sage_struct_set"),
+                        FakeSymbol("sage_bit_and"),
+                        FakeSymbol("sage_range1"),
+                        FakeSymbol("main"),
+                    ],
+                )
+            ]
+        )
+
+        self.assertEqual(self.detect(elf), "SageLang")
+
+    def test_detects_sagelang_from_runtime_strings(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".rodata",
+                    data=(
+                        b"Unhandled exception: Runtime Error: Undefined variable '%s'. "
+                        b"Runtime Error: method call on non-instance. "
+                        b"Runtime Error: no __class__ on instance. "
+                        b"too many classes"
+                    ),
+                ),
+                FakeSection(".dynsym", symbols=[]),
+            ]
+        )
+
+        self.assertEqual(self.detect(elf), "SageLang")
+
+    def test_detects_generated_c_symbol_with_path(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".symtab",
+                    symbols=[
+                        FakeSymbol("/tmp/build/sagec_987654.c"),
+                    ],
+                )
+            ]
+        )
+
+        self.assertEqual(self.detect(elf), "SageLang")
+
+    def test_detects_provided_sage_sample_binaries(self):
+        try:
+            from elftools.elf.elffile import ELFFile
+        except ImportError:
+            self.skipTest("pyelftools is not installed")
+
+        repo_root = Path(__file__).resolve().parents[1]
+        sample_binaries = ("for_loop", "guess", "hello", "logical")
+
+        missing = [name for name in sample_binaries if not (repo_root / name).exists()]
+        if missing:
+            self.skipTest(f"missing sample binaries: {', '.join(missing)}")
+
+        for name in sample_binaries:
+            with self.subTest(binary=name):
+                with open(repo_root / name, "rb") as handle:
+                    elf = ELFFile(handle)
+                    self.assertEqual(self.detect(elf), "SageLang")
+
 
 if __name__ == "__main__":
     unittest.main()

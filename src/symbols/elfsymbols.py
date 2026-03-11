@@ -31,23 +31,65 @@ SAGELANG_PREFIXES = (
     "sage_class_",
 )
 
+SAGELANG_RUNTIME_PREFIXES = (
+    "sage_mem_",
+    "sage_struct_",
+    "sage_bit_",
+    "sage_range",
+    "sage_input_",
+    "sage_clock_",
+    "sage_arch_",
+)
+
+SAGELANG_CLUSTER_SENTINELS = {
+    "sage_try_stack",
+    "sage_exception_value",
+    "sage_method_table",
+    "sage_class_registry",
+    "sage_slot_undefined",
+}
+
+
+def _is_sage_generated_c_file_symbol(name):
+    if not name.endswith(".c"):
+        return False
+
+    basename = name.rsplit("/", maxsplit=1)[-1]
+    if not basename.startswith("sagec_"):
+        return False
+
+    sequence = basename[len("sagec_") : -2]
+    return sequence.isdigit()
+
 
 def scan_symbols(symbol_iter, scores):
     """
     Scan symbols and update language scores based on naming heuristics.
     """
+    sage_symbol_count = 0
+    sage_runtime_family_count = 0
+    sage_cluster_hits = set()
+
     for symbol in symbol_iter:
         name = symbol.name.lower()
         if not name:
             continue
 
         if "SageLang" in scores:
-            if name.startswith("sagec_") and name.endswith(".c"):
+            if _is_sage_generated_c_file_symbol(name):
                 scores["SageLang"] += 8
+            if name.startswith("sage_"):
+                sage_symbol_count += 1
             if name in SAGELANG_EXACT_SYMBOLS:
                 scores["SageLang"] += 4
+                sage_cluster_hits.add(name)
             if any(name.startswith(prefix) for prefix in SAGELANG_PREFIXES):
                 scores["SageLang"] += 4
+            if any(name.startswith(prefix) for prefix in SAGELANG_RUNTIME_PREFIXES):
+                sage_runtime_family_count += 1
+                scores["SageLang"] += 2
+            if name in SAGELANG_CLUSTER_SENTINELS:
+                sage_cluster_hits.add(name)
 
         if "rust_eh_personality" in name:
             scores["Rust"] += 5
@@ -93,3 +135,19 @@ def scan_symbols(symbol_iter, scores):
             scores["Go"] += 1
         if "std::vector" in name or "std::string" in name or "std::map" in name:
             scores["C++"] += 2
+
+    if "SageLang" in scores:
+        if sage_symbol_count >= 20:
+            scores["SageLang"] += 10
+        elif sage_symbol_count >= 8:
+            scores["SageLang"] += 6
+        elif sage_symbol_count >= 4:
+            scores["SageLang"] += 3
+
+        if sage_runtime_family_count >= 6:
+            scores["SageLang"] += 6
+        elif sage_runtime_family_count >= 3:
+            scores["SageLang"] += 3
+
+        if len(sage_cluster_hits) >= 3:
+            scores["SageLang"] += 6
