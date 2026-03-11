@@ -1,107 +1,132 @@
 # ELFexplorer
 
-**ELFexplorer** is a lightweight, modular Python utility for parsing and inspecting ELF (Executable and Linkable Format) binaries. It supports detailed analysis modes to display ELF headers, program headers, section headers, and detect the likely source language of the binary using advanced heuristic techniques.
+`ELFexplorer` is a modular ELF analysis and heuristic fingerprinting tool focused on language and compiler inference.
 
-## Modular Design
+It currently provides:
+- Structured ELF metadata reporting (general/important/detailed modes)
+- Heuristic source-language detection
+- Heuristic compiler detection (GCC vs Clang)
+- Corpus-driven validation over multi-architecture test binaries
 
-ELFexplorer is now split into maintainable modules:
-- `elfscan.py`: Main CLI entry point
-- `elfdetect.py`: Source language detection logic
-- `elfsymbols.py`: Symbol table scanning and scoring
-- `elfinfo.py`: ELF header/segment/section output functions
+## Supported Language Detection
 
-## Features
+Current language labels:
+- `ASM`
+- `C`
+- `C++`
+- `C#`
+- `Rust`
+- `Go`
+- `Dart`
+- `D`
+- `Ada`
+- `Fortran`
+- `Nim`
+- `Zig`
+- `Swift`
+- `Java`
+- `Python`
+- `SageLang`
 
-- Displays ELF headers with parsed `e_ident` values
-- Prints program header segments with virtual/physical address mapping
-- Outputs detailed section headers with names, types, sizes, and flags
-- Heuristically detects source language (ASM, C, C++, C#, Rust, Go, Dart, D, Ada, Fortran, Nim, Zig, Swift, Java, Python, SageLang)
-- Heuristically detects likely compiler toolchain (GCC or Clang when evidence is present)
-- Modularized for easier updates and extension
-- Supports 64-bit ELF files (currently tested on AArch64/ARM64)
-- Compatible with Python 3.12+
+## Compiler Detection
 
-## Usage
+Current compiler labels:
+- `GCC`
+- `Clang`
+- `Ambiguous: GCC/Clang`
+- `Unknown`
 
-```bash
-python3.12 src/elfscan.py -m detailed <elf_binary>
-```
+## Project Layout
 
-## Example:
-
-```bash
-python3.12 src/elfscan.py -m detailed hello_rust
-```
-
-## Output:
-
-```bash
-Language detection scores:
-  C: 6
-  C++: 1058
-  Rust: 169
-  ...
-Detected Source Language (heuristic): Rust
-
-ELF Type: ET_DYN (Shared Object)
-Machine: EM_AARCH64 (ARM 64-bit)
-Entry Point: 0x6300
-Lists all segments including PT_LOAD, PT_DYNAMIC, PT_GNU_STACK, etc.
-Detailed section headers including .text, .data, .bss, .rodata, .dynsym, .debug_*, etc.
-```
-
-
-## Output Sections
-
-• ELF Header – Identifies basic ELF metadata (architecture, type, entry point, etc.)
-• Program Headers – Maps how the binary will be loaded into memory
-• Section Headers – Contains code, data, symbol tables, debug info, etc.
-• Source Language Detection – Heuristics for ASM, C, C++, C#, Rust, Go, Dart, D, Ada, Fortran, Nim, Zig, Swift, Java, Python, SageLang
-• Compiler Detection – Heuristics for GCC vs Clang
-
+- `src/elfscan.py`: CLI entry point and formatted report output
+- `src/detect/elfdetect.py`: language/compiler scoring engine
+- `src/symbols/elfsymbols.py`: symbol-level heuristic scoring
+- `src/info/elfinfo.py`: ELF metadata display helpers
+- `tests/test_elfscan_cli.py`: corpus integration tests
+- `tests/test_elfdetect_heuristics.py`: focused unit tests for heuristic rules
+- `test-bin/`: architecture folders with known hello-world ELF samples
 
 ## Requirements
 
-• Python 3.12+
-• pyelftools (install via pip install pyelftools)
-• Modular Python files in `src/`
+- Python 3.12+
+- `pyelftools`
 
-
-## Example Output (Trimmed)
+Install dependency:
 
 ```bash
------ Detailed ELF Header -----
-e_machine: EM_AARCH64
-e_entry: 25216
-...
-
------ Program Headers (Segments) -----
-Segment Type: PT_LOAD
-  Virtual Address: 0x0
-  Physical Address: 0x0
-  File Offset: 0
-...
-
------ Section Headers -----
-Section: .text
-  Type: SHT_PROGBITS
-  Size: 247060 bytes
-...
-
-Detected Source Language (heuristic): C++
+python3 -m pip install pyelftools
 ```
 
-## TODO
+## CLI Usage
 
-• Add support for 32-bit ELF files
+```bash
+python3 src/elfscan.py [-m general|important|detailed] <elf_binary>
+```
 
-• Improve source language detection for stripped or heavily optimized binaries
+Examples:
 
-• Add JSON or colorized output mode
+```bash
+python3 src/elfscan.py test-bin/x86_64/hello_rust
+python3 src/elfscan.py -m detailed test-bin/aarch64/hello_go
+```
 
-• Support for symbol demangling
+## Styled Output
 
+The CLI prints:
+- A structured report header
+- Heuristic score sections
+- Language/compiler summary lines
+- Selected ELF metadata block by mode
+
+If stdout is a TTY and `NO_COLOR` is not set, styled ANSI output is enabled automatically.
+
+## Testing
+
+Run all tests:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+Verbose corpus output levels in `tests/test_elfscan_cli.py`:
+- no switch: level 1
+- `-v`: level 1 (same as default)
+- `-vv`: level 2
+- `-vvv`: level 3
+- `-vvvv`: level 4 (full per-binary captured output)
+- `-q`: level 0 (quiet mode)
+
+Example:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -vvv
+```
+
+## Corpus Expectations
+
+Current corpus shape expected by tests:
+- `aarch64`: `hello_asm`, `hello_c`, `hello_cpp`, `hello_dart`, `hello_go`
+- `arm32`: `hello_asm`, `hello_c`, `hello_cpp`, `hello_dart`, `hello_go`
+- `rv64`: `hello_asm`, `hello_c`, `hello_cpp`, `hello_dart`, `hello_go`
+- `x86`: `hello_asm`, `hello_c`, `hello_cpp`, `hello_dart`, `hello_go`
+- `x86_64`: `hello_asm`, `hello_c`, `hello_cpp`, `hello_dart`, `hello_go`, `hello_rust`
+
+Future additions (Nim, Zig, SageLang, C#) should be added to both:
+- `test-bin/<arch>/`
+- `tests/test_elfscan_cli.py` expected corpus list
+
+## Heuristic Scope
+
+Detection is heuristic, not ground truth. It combines:
+- section-name patterns
+- symbol-name patterns
+- dynamic dependency hints
+- debug/comment string hints
+- runtime API marker strings
+- binary-shape rules (for ASM)
+
+See `ELFexplored_Guide.md` for full details.
 
 ## License
 
-**MIT License**
+MIT License

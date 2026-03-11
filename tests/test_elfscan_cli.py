@@ -23,6 +23,36 @@ class ElfscanCorpusCLITests(unittest.TestCase):
         cls.repo_root = Path(__file__).resolve().parents[1]
         cls.elfscan_script = cls.repo_root / "src" / "elfscan.py"
         cls.corpus_root = cls.repo_root / "test-bin"
+        cls.verbosity_level = cls._resolve_verbosity_level()
+
+    @staticmethod
+    def _resolve_verbosity_level():
+        """
+        Verbosity levels (5 total):
+          0: quiet (-q/--quiet)
+          1: default output (no switch, -v, or --verbose)
+          2: extra summary (-vv)
+          3: detailed summary (-vvv)
+          4: everything (-vvvv)
+        """
+        args = sys.argv[1:]
+        if "-q" in args or "--quiet" in args:
+            return 0
+
+        v_count = 0
+        for arg in args:
+            if arg == "--verbose":
+                v_count += 1
+            elif arg.startswith("-") and set(arg) <= {"-", "v"} and "v" in arg:
+                v_count += arg.count("v")
+
+        if v_count <= 1:
+            return 1
+        if v_count == 2:
+            return 2
+        if v_count == 3:
+            return 3
+        return 4
 
     def _assert_prerequisites(self):
         if not self.elfscan_script.exists():
@@ -75,10 +105,43 @@ class ElfscanCorpusCLITests(unittest.TestCase):
         is_pass = detected_language == expected_language
         status = "[PASS]" if is_pass else "[FAIL]"
         color = self.GREEN if is_pass else self.RED
-        print(
-            f"{color}{status}{self.RESET} {arch}/{binary_name} "
-            f"expected={expected_language} detected={detected_language}"
-        )
+
+        compiler_match = re.search(r"Detected Compiler \(heuristic\):\s*(.+)", output)
+        detected_compiler = compiler_match.group(1).strip() if compiler_match else "Unknown"
+
+        if self.verbosity_level >= 1:
+            print(
+                f"{color}{status}{self.RESET} {arch}/{binary_name} "
+                f"expected={expected_language} detected={detected_language}"
+            )
+
+        if self.verbosity_level >= 2:
+            print(
+                f"  compiler={detected_compiler} exit_code={completed.returncode} "
+                f"path={binary}"
+            )
+
+        if self.verbosity_level >= 3:
+            score_lines = []
+            in_scores = False
+            for line in output.splitlines():
+                if line.startswith("Language detection scores:"):
+                    in_scores = True
+                    continue
+                if in_scores:
+                    if line.startswith("Compiler detection scores:") or not line.strip():
+                        break
+                    score_lines.append(line.strip())
+            if score_lines:
+                print("  top language scores:")
+                for line in score_lines[:6]:
+                    print(f"    {line}")
+
+        if self.verbosity_level >= 4:
+            print("  full elfscan output:")
+            for line in output.splitlines():
+                print(f"    {line}")
+
         self.assertEqual(detected_language, expected_language, output)
 
     def test_corpus_inventory_matches_expected(self):
