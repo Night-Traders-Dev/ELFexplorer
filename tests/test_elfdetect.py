@@ -58,6 +58,16 @@ class FakeELF:
 
 
 class DetectSourceLanguageTests(unittest.TestCase):
+    EXPECTED_BY_BINARY_NAME = {
+        "hello_asm": "C",
+        "hello_c": "C",
+        "hello_cpp": "C++",
+        "hello_dart": "C++",  # Dart native AOT artifacts currently map closest to C++ heuristics.
+        "hello_go": "Go",
+        "hello_rust": "Rust",
+        "hello_sage": "SageLang",
+    }
+
     def detect(self, elf):
         with io.StringIO() as capture, mock.patch("sys.stdout", capture):
             return detect_source_language(elf)
@@ -120,7 +130,8 @@ class DetectSourceLanguageTests(unittest.TestCase):
                         b"Unhandled exception: Runtime Error: Undefined variable '%s'. "
                         b"Runtime Error: method call on non-instance. "
                         b"Runtime Error: no __class__ on instance. "
-                        b"too many classes"
+                        b"too many classes "
+                        b"sage_try_stack"
                     ),
                 ),
                 FakeSection(".dynsym", symbols=[]),
@@ -161,6 +172,40 @@ class DetectSourceLanguageTests(unittest.TestCase):
                 with open(repo_root / name, "rb") as handle:
                     elf = ELFFile(handle)
                     self.assertEqual(self.detect(elf), "SageLang")
+
+    def test_detects_language_for_test_bin_corpus(self):
+        try:
+            from elftools.elf.elffile import ELFFile
+        except ImportError:
+            self.skipTest("pyelftools is not installed")
+
+        repo_root = Path(__file__).resolve().parents[1]
+        corpus_root = repo_root / "test-bin"
+        if not corpus_root.exists():
+            self.skipTest("test-bin directory is missing")
+
+        arch_dirs = sorted(path for path in corpus_root.iterdir() if path.is_dir())
+        if not arch_dirs:
+            self.skipTest("no architecture directories found under test-bin")
+
+        saw_binary = False
+        for arch_dir in arch_dirs:
+            for binary_path in sorted(path for path in arch_dir.iterdir() if path.is_file()):
+                saw_binary = True
+                expected = self.EXPECTED_BY_BINARY_NAME.get(binary_path.name)
+                self.assertIsNotNone(
+                    expected,
+                    f"missing expected language mapping for test binary '{binary_path.name}'",
+                )
+
+                with self.subTest(arch=arch_dir.name, binary=binary_path.name):
+                    with open(binary_path, "rb") as handle:
+                        elf = ELFFile(handle)
+                        detected = self.detect(elf)
+                        self.assertEqual(detected, expected)
+
+        if not saw_binary:
+            self.skipTest("no ELF binaries found under test-bin/*")
 
 
 if __name__ == "__main__":

@@ -62,7 +62,7 @@ def _is_sage_generated_c_file_symbol(name):
     return sequence.isdigit()
 
 
-def scan_symbols(symbol_iter, scores):
+def scan_symbols(symbol_iter, scores, seen_names=None):
     """
     Scan symbols and update language scores based on naming heuristics.
     """
@@ -74,6 +74,10 @@ def scan_symbols(symbol_iter, scores):
         name = symbol.name.lower()
         if not name:
             continue
+        if seen_names is not None:
+            if name in seen_names:
+                continue
+            seen_names.add(name)
 
         if "SageLang" in scores:
             if _is_sage_generated_c_file_symbol(name):
@@ -107,7 +111,11 @@ def scan_symbols(symbol_iter, scores):
             scores["C++"] += 2
         if "std::" in name or "__cxx" in name or "typeinfo" in name:
             scores["C++"] += 2
-        if "vtable for" in name or "rtti" in name or "__cxa" in name:
+        if "vtable for" in name or "rtti" in name:
+            scores["C++"] += 2
+        if "__cxa" in name and "__cxa_finalize" not in name:
+            scores["C++"] += 2
+        if "glibcxx" in name:
             scores["C++"] += 2
 
         if "_dmain" in name or "_dmodule" in name:

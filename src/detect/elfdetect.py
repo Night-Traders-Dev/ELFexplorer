@@ -1,3 +1,5 @@
+import re
+
 from symbols.elfsymbols import scan_symbols
 
 SUPPORTED_LANGUAGES = (
@@ -48,6 +50,9 @@ SAGELANG_STRONG_STRING_MARKERS = (
     b"sage_class_registry",
     b"sage_slot_undefined",
 )
+
+SAGELANG_TOKEN_PATTERN = re.compile(rb"(?<![a-z0-9_])sage_[a-z0-9_]+")
+SAGELANG_GENERATED_C_PATTERN = re.compile(rb"(?<![a-z0-9_])sagec_[0-9]+\.c(?![a-z0-9_])")
 
 
 def _empty_scores():
@@ -105,12 +110,14 @@ def _score_dynamic_section(elf, scores):
     if not dynamic:
         return
 
+    needed_libs = set()
     try:
         for tag in dynamic.iter_tags():
             if tag.entry.d_tag != "DT_NEEDED":
                 continue
 
             needed = tag.needed.lower()
+            needed_libs.add(needed)
             if "stdc++" in needed or "libc++" in needed:
                 scores["C++"] += 3
             if "c++" in needed:
@@ -135,22 +142,28 @@ def _score_dynamic_section(elf, scores):
                 scores["Python"] += 3
             if "libsage" in needed or "sagelang" in needed:
                 scores["SageLang"] += 4
+
+        # Plain libc-only dynamically linked binaries are usually C/asm programs.
+        if needed_libs == {"libc.so.6"}:
+            scores["C"] += 2
     except Exception as exc:
         print(f"Error processing dynamic section: {exc}")
 
 
 def _score_symbol_tables(elf, scores):
+    seen_names = set()
+
     symtab = elf.get_section_by_name(".symtab")
     if symtab:
         try:
-            scan_symbols(symtab.iter_symbols(), scores)
+            scan_symbols(symtab.iter_symbols(), scores, seen_names=seen_names)
         except Exception as exc:
             print(f"Error processing .symtab: {exc}")
 
     dynsym = elf.get_section_by_name(".dynsym")
     if dynsym:
         try:
-            scan_symbols(dynsym.iter_symbols(), scores)
+            scan_symbols(dynsym.iter_symbols(), scores, seen_names=seen_names)
         except Exception as exc:
             print(f"Error processing .dynsym: {exc}")
 
@@ -184,15 +197,10 @@ def _score_sagelang_strings(elf, scores):
 
         if b"sagelang" in data or b"sage compiler" in data:
             sage_token_score += 2
-        if b"sagec_" in data and b".c" in data:
+        if SAGELANG_GENERATED_C_PATTERN.search(data):
             sage_token_score += 2
 
-        sage_substring_count += data.count(b"sage_")
-
-    if len(runtime_hits) >= 4:
-        scores["SageLang"] += 8
-    elif len(runtime_hits) >= 2:
-        scores["SageLang"] += 4
+        sage_substring_count += len(SAGELANG_TOKEN_PATTERN.findall(data))
 
     if len(strong_hits) >= 4:
         scores["SageLang"] += 8
@@ -208,6 +216,15 @@ def _score_sagelang_strings(elf, scores):
         scores["SageLang"] += 8
     elif sage_substring_count >= 8:
         scores["SageLang"] += 4
+
+    # Runtime error phrases can appear in non-Sage binaries (e.g. other VMs).
+    # Only trust them when paired with at least one Sage-specific anchor.
+    has_sage_anchor = bool(strong_hits) or sage_token_score > 0 or sage_substring_count > 0
+    if has_sage_anchor:
+        if len(runtime_hits) >= 4:
+            scores["SageLang"] += 8
+        elif len(runtime_hits) >= 2:
+            scores["SageLang"] += 4
 
 
 def _score_debug_info(elf, scores):
@@ -248,7 +265,7 @@ def _score_debug_info(elf, scores):
 def _score_section_names(elf, scores):
     for section in elf.iter_sections():
         section_name = section.name.lower()
-        if section_name in [".eh_frame", ".gcc_except_table"]:
+        if section_name == ".gcc_except_table":
             scores["C++"] += 1
             scores["Rust"] += 1
         if section_name.startswith(".rodata.str1."):
