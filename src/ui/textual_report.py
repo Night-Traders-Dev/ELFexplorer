@@ -55,7 +55,7 @@ def default_report_export_path(
 
 def run_textual_report(report: Dict):
     from textual.app import App, ComposeResult, SystemCommand
-    from textual.containers import Container
+    from textual.containers import Container, VerticalScroll
     from textual.screen import Screen
     from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
 
@@ -69,17 +69,19 @@ def run_textual_report(report: Dict):
         DataTable {
             height: 1fr;
         }
-        #metadata {
+        #metadata_scroll {
             height: 1fr;
-            padding: 1 2;
             border: round $secondary;
-            overflow: auto;
+        }
+        #metadata {
+            padding: 1 2;
+        }
+        #evidence_scroll {
+            height: 1fr;
+            border: round $accent;
         }
         #evidence {
-            height: 1fr;
             padding: 1 2;
-            border: round $accent;
-            overflow: auto;
         }
         """
 
@@ -107,9 +109,11 @@ def run_textual_report(report: Dict):
                         yield DataTable(id="compiler_scores")
                         yield DataTable(id="build_scores")
                     with TabPane("Metadata"):
-                        yield Static("", id="metadata")
+                        with VerticalScroll(id="metadata_scroll"):
+                            yield Static("", id="metadata")
                     with TabPane("Evidence"):
-                        yield Static("", id="evidence")
+                        with VerticalScroll(id="evidence_scroll"):
+                            yield Static("", id="evidence")
             yield Footer()
 
         def get_system_commands(self, screen: Screen):
@@ -231,4 +235,3 @@ def run_textual_report(report: Dict):
             self._refresh_view()
 
     ReportApp(report).run()
-
