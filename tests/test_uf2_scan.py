@@ -82,7 +82,7 @@ class UF2ScanTests(unittest.TestCase):
 
     def test_build_scan_report_rejects_unknown_binary_format(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "unknown.bin"
+            path = Path(tmp_dir) / "unknown.txt"
             path.write_bytes(b"not-an-elf-or-uf2")
             with self.assertRaises(ValueError):
                 build_scan_report(path)
@@ -90,4 +90,3 @@ class UF2ScanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

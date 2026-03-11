@@ -5,12 +5,21 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
+from baremetal import (
+    is_intel_hex_file,
+    is_raw_firmware_bin_file,
+    is_srec_file,
+    scan_intel_hex_file,
+    scan_raw_binary_file,
+    scan_srec_file,
+)
 from detect.elfdetect import (
     detect_artifact_profile,
     detect_build_system,
     detect_compiler,
     detect_source_language,
 )
+from elfarchive import is_ar_archive, scan_ar_archive
 from info.elfinfo import print_detailed_info, print_general_info, print_important_info
 from uf2 import is_uf2_file, scan_uf2_file
 from version import get_version
@@ -88,7 +97,21 @@ def build_scan_report(filepath, mode="general"):
     if is_uf2_file(input_path):
         return scan_uf2_file(input_path, mode=mode)
 
-    raise ValueError("Unsupported file format. Expected ELF or UF2.")
+    if is_ar_archive(input_path):
+        return scan_ar_archive(input_path, mode=mode)
+
+    if is_intel_hex_file(input_path):
+        return scan_intel_hex_file(input_path, mode=mode)
+
+    if is_srec_file(input_path):
+        return scan_srec_file(input_path, mode=mode)
+
+    if is_raw_firmware_bin_file(input_path):
+        return scan_raw_binary_file(input_path, mode=mode)
+
+    raise ValueError(
+        "Unsupported file format. Expected ELF, UF2, GNU ar archive, Intel HEX, S-record, or raw firmware binary."
+    )
 
 
 def is_elf_file(path):
@@ -100,4 +123,11 @@ def is_elf_file(path):
 
 
 def is_supported_binary(path):
-    return is_elf_file(path) or is_uf2_file(path)
+    return (
+        is_elf_file(path)
+        or is_uf2_file(path)
+        or is_ar_archive(path)
+        or is_intel_hex_file(path)
+        or is_srec_file(path)
+        or is_raw_firmware_bin_file(path)
+    )

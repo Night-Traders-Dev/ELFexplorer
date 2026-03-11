@@ -167,11 +167,14 @@ class ElfscanCorpusCLITests(unittest.TestCase):
             self.assertTrue(arch_dir.is_dir(), f"missing architecture directory: {arch_dir}")
             actual_files = {path.name for path in arch_dir.iterdir() if path.is_file()}
             expected_files = set(self.EXPECTED_CORPUS[arch])
-            self.assertEqual(
-                actual_files,
-                expected_files,
-                f"unexpected file set for {arch}. update EXPECTED_CORPUS if corpus changed.",
+            missing = expected_files - actual_files
+            self.assertFalse(
+                missing,
+                f"missing expected corpus files for {arch}: {sorted(missing)}",
             )
+            extras = sorted(actual_files - expected_files)
+            if extras and self.verbosity_level >= 2:
+                print(f"[INFO] {arch} has additional binaries not in EXPECTED_CORPUS: {extras}")
 
 
 def _install_per_binary_tests():

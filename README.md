@@ -1,18 +1,30 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
 [![Tests](https://img.shields.io/badge/tests-unittest%20heuristics%20%2B%20corpus-brightgreen)](#testing)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 
-`ELFexplorer` is a modular ELF analysis and heuristic fingerprinting tool focused on:
+`ELFexplorer` is a modular binary analysis and heuristic fingerprinting tool focused on:
 - source language inference
 - compiler/assembler inference
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.6.0
+
+- Added native scanning support for Intel HEX firmware files (`.hex`, `.ihex`, `.ihx`).
+- Added native scanning support for Motorola S-record firmware files (`.srec`, `.s19`, `.s28`, `.s37`, `.mot`).
+- Added native scanning support for raw firmware binaries (`.bin`, `.fw`, `.rom`, `.img`, `.raw`, `.blob`).
+- Added GNU ar (`.a`) archive scanning with ELF member aggregation.
+- Extended crawl support to include all supported formats.
+- Added format regression tests in `tests/test_format_support.py`.
+- Added Textual report command-palette actions (`Ctrl+P`) for:
+  - exporting the current report to Markdown/PDF
+  - switching metadata mode (`general`/`important`/`detailed`) and rescanning in-place
 
 ## What Changed in 0.5.0
 
@@ -48,6 +60,15 @@
 
 `Bare-metal Firmware`, `Linux User-space Executable`, `Static User-space Executable`, `Linux Shared Library`, `Linux Kernel Module`, `Relocatable Object`, `Ambiguous: ...`, `Unknown`
 
+## Supported Input Formats
+
+- ELF binaries (`.elf`, executables/shared objects/object files with ELF magic)
+- UF2 firmware images (`.uf2`)
+- GNU ar archives (`.a`) with ELF members
+- Intel HEX firmware files (`.hex`, `.ihex`, `.ihx`)
+- Motorola S-record firmware files (`.srec`, `.s19`, `.s28`, `.s37`, `.mot`)
+- raw firmware binaries (`.bin`, `.fw`, `.rom`, `.img`, `.raw`, `.blob`)
+
 ## Reliability Design
 
 Current reliability strategy combines multiple signal classes:
@@ -66,12 +87,16 @@ Current false-positive guardrails include:
 
 ## Project Layout
 
-- `src/elfscan.py`: CLI, orchestration, report rendering, crawl/task/load/save/export plumbing
+- `src/elfscan.py`: thin CLI entrypoint/facade
+- `src/scancli/`: CLI args, render, workflow, and format dispatch orchestration
 - `src/detect/`: language/compiler/build-system/artifact detection orchestration + heuristics
 - `src/detect/techniques/`: evidence-specific heuristic modules
 - `src/detect/arch/`: architecture-shape heuristics
 - `src/info/elfinfo.py`: metadata printers (`general`, `important`, `detailed`)
 - `src/symbols/elfsymbols.py`: symbol-driven heuristic scoring
+- `src/uf2/`: UF2 parsing and UF2-backed firmware scanning
+- `src/baremetal/`: Intel HEX, S-record, and raw firmware scanners
+- `src/elfarchive/`: GNU ar archive scanners for ELF member aggregation
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
@@ -134,6 +159,11 @@ Examples:
 
 ```bash
 python3 src/elfscan.py test-bin/x86_64/hello_rust
+python3 src/elfscan.py ../littleOS/littleos.uf2
+python3 src/elfscan.py firmware.hex
+python3 src/elfscan.py firmware.srec
+python3 src/elfscan.py firmware.bin
+python3 src/elfscan.py libdrivers.a
 python3 src/elfscan.py --ui plain -m detailed test-bin/aarch64/hello_go
 python3 src/elfscan.py --crawl test-bin --max-files 20 --save-collection
 python3 src/elfscan.py --task-file tasks.json --export-collection-md reports/batch.md
@@ -157,6 +187,24 @@ The workspace supports:
 - summary display (`show`)
 
 If Textual is unavailable, use `--ui plain` with explicit CLI options.
+
+## Textual Report Palette
+
+Inside the Textual report viewer (`--ui textual` with a file path), use `Ctrl+P` to open the command palette.
+
+Custom report commands include:
+- `Report: Export Markdown`
+- `Report: Export PDF`
+- `Report: Rescan Current Mode`
+- `Report: Mode General + Rescan`
+- `Report: Mode Important + Rescan`
+- `Report: Mode Detailed + Rescan`
+
+Quick keys in report view:
+- `r`: rescan current mode
+- `1`: switch to `general` and rescan
+- `2`: switch to `important` and rescan
+- `3`: switch to `detailed` and rescan
 
 ## Task Files
 
@@ -269,7 +317,7 @@ See [`ELFexplored_Guide.md`](ELFexplored_Guide.md) for method-level details and 
 ## Versioning
 
 - Canonical version source: [`VERSION`](VERSION)
-- Current version: `0.5.0`
+- Current version: `0.6.0`
 - CLI check:
 
 ```bash

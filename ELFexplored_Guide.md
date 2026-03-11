@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-`ELFexplorer` is an evidence-driven ELF analysis framework that performs:
+`ELFexplorer` is an evidence-driven binary analysis framework that performs:
 - source-language inference
 - compiler/assembler inference
 - host build-system inference
@@ -15,19 +15,33 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.5.0` (see `VERSION`).
+Current release: `0.6.0` (see `VERSION`).
+
+Supported input containers currently include:
+- ELF binaries
+- UF2 firmware images
+- Intel HEX firmware files
+- Motorola S-record firmware files
+- raw firmware binaries
+- GNU ar archives containing ELF members
 
 ## 2. Analysis Layers
 
-### 2.1 ELF Structural Layer
+### 2.1 Binary Structural Layer
 
-Structural extraction is based on `pyelftools` and includes:
+For ELF-family inputs, structural extraction is based on `pyelftools` and includes:
 - ELF type (`ET_EXEC`, `ET_DYN`, `ET_REL`)
 - machine (`EM_*`)
 - entry point (`e_entry`)
 - program headers (`PT_INTERP`, `PT_DYNAMIC`, load segment map)
 - section names and section payload scans
 - dynamic dependencies (`DT_NEEDED`)
+
+For firmware containers (UF2/Intel HEX/S-record/raw):
+- container-level parse/validation (record and checksum checks where applicable)
+- payload reconstruction into contiguous data blobs
+- address-range extraction when available
+- family/target hints (for example RP2040 UF2 family ID)
 
 This layer supplies hard constraints and shape hints used by all upper layers.
 
@@ -64,10 +78,20 @@ Outputs are available as:
 ## 3. Repository Architecture
 
 - `src/elfscan.py`
-  - CLI entrypoint
-  - report orchestration
-  - crawl, task, save/load, export plumbing
-  - UI mode switching (`plain` / `textual`)
+  - thin CLI entrypoint/facade
+- `src/scancli/`
+  - argument parsing
+  - dispatch and workflow orchestration
+  - plain/textual report rendering
+- `src/uf2/`
+  - UF2 parser
+  - UF2-backed firmware scan pipeline
+- `src/baremetal/`
+  - Intel HEX parser + scanner
+  - Motorola S-record parser + scanner
+  - raw binary firmware scanner
+- `src/elfarchive/`
+  - GNU ar parser + ELF member aggregation scanner
 - `src/detect/elfdetect.py`
   - compatibility re-export of detector entrypoints
 - `src/detect/language/core.py`
@@ -236,7 +260,7 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 
 ### 10.3 Workload modes
 
-- single-file scan: positional ELF path
+- single-file scan: positional supported binary path
 - directory crawl: `--crawl`
 - task-file batch: `--task-file`
 - load existing report(s): `--load-scan`, `--load-collection`
@@ -247,6 +271,18 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - save collection JSON: `--save-collection [path]`
 - export report: `--export-md`, `--export-pdf`
 - export collection: `--export-collection-md`, `--export-collection-pdf`
+
+### 10.5 Textual Report Palette
+
+When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
+- Markdown export command
+- PDF export command
+- rescan command using current mode
+- mode-switch-and-rescan commands (`general`, `important`, `detailed`)
+
+Additional quick bindings in report view:
+- `r` for rescan current mode
+- `1` / `2` / `3` for mode switch + rescan
 
 ## 11. Textual Workspace Command Surface
 
