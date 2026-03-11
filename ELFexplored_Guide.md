@@ -117,6 +117,10 @@ Outputs are available as:
   - tabbed Textual report viewer
 - `src/ui/textual_workspace.py`
   - interactive Textual workspace for scan/load/export workflows and advanced ELF edit mode
+- `src/ui/textual_editor.py`
+  - dedicated split-pane editor workbench screen
+  - synchronized hex pane + disassembly pane + patch form
+  - in-app how-to and contextual hot tips
 - `src/edit/elf_editor.py`
   - safe in-memory ELF editing backend
   - ELF/program/section header field mutation
@@ -320,6 +324,7 @@ Workspace commands:
 - `export-collection-pdf <path>`
 - `show`
 - `edit-open <elf>`
+- `edit-ui`
 - `edit-close`
 - `edit-status`
 - `edit-show-elf`
@@ -346,9 +351,27 @@ Workspace commands:
 
 Edit mode is session-based:
 1. open an ELF with `edit-open`
-2. inspect/update headers in memory
-3. review pending edits with `edit-diff`
-4. persist with `edit-save`, or discard with `edit-revert`
+2. optionally launch the dedicated split-pane workbench via `edit-ui`
+3. inspect/update headers in memory
+4. review pending edits with `edit-diff`
+5. persist with `edit-save`, or discard with `edit-revert`
+
+### 11.2 Split-Pane Editor Workbench
+
+`edit-ui` opens a dedicated Textual editor screen composed of:
+- hex pane (left): byte stream visualization with offset/length/width controls
+- disassembly pane (right): section or address-range disassembly rendering
+- patch form (bottom-left): byte poke, hex patch, ASCII patch, save, revert
+- workflow guide (bottom-middle): step-by-step operational how-to
+- hot tips panel (bottom-right): contextual guidance from hovered/focused controls
+
+Keyboard actions in workbench:
+- `F5`: refresh hex + disassembly panes
+- `Ctrl+H`: refresh hex pane
+- `Ctrl+D`: refresh disassembly pane
+- `Ctrl+S`: save edited binary
+- `Ctrl+R`: revert in-memory edits
+- `Esc`: return to workspace
 
 Safety and constraints:
 - edits are in-memory until explicitly saved

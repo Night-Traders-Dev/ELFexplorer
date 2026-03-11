@@ -29,6 +29,12 @@
   - edit raw bytes (`edit-poke`, `edit-patch`, `edit-write-ascii`)
   - view disassembler-style hex dump ranges
   - disassemble ELF sections/ranges directly in Textual (`edit-disasm`, `edit-disasm-range`)
+  - dedicated split-pane editor workbench (`edit-ui` / `Ctrl+E`) with:
+    - hex pane
+    - disassembly pane
+    - patch form
+    - built-in workflow how-to
+    - contextual hover/focus hot tips
   - inspect pending edits, revert edits, and save edited binaries
 - Added Textual report command-palette actions (`Ctrl+P`) for:
   - exporting the current report to Markdown/PDF
@@ -109,6 +115,7 @@ Current false-positive guardrails include:
 - `src/settings.py`: JSON settings loader/saver
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
+- `src/ui/textual_editor.py`: split-pane Textual editor workbench (hex/disasm/patch/how-to/tips)
 - `src/edit/elf_editor.py`: safe in-memory ELF header editor + hex viewer backend
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
 - `src/reporting/export.py`: Markdown/PDF export helpers
@@ -198,6 +205,7 @@ The workspace supports:
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - summary display (`show`)
 - advanced ELF editing:
+  - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
   - `edit-open <elf>` / `edit-close` / `edit-status`
   - `edit-show-elf` / `edit-set-elf <field> <value>`
   - `edit-list-phdr` / `edit-show-phdr <idx>` / `edit-set-phdr <idx> <field> <value>`
@@ -209,6 +217,29 @@ The workspace supports:
   - `edit-disasm [section] [max_lines]`
   - `edit-disasm-range <start> <stop> [section] [max_lines]`
   - `edit-diff` / `edit-revert` / `edit-save [path]`
+
+### Split-Pane Editor Workbench
+
+After `edit-open <elf>`, run:
+
+```bash
+edit-ui
+```
+
+Workbench layout:
+- left: hex pane + hex range controls
+- right: disassembly pane + section/range controls
+- bottom-left: patch form (poke/hex/ascii/save/revert)
+- bottom-middle: in-app step-by-step how-to
+- bottom-right: hot tips panel (updates from hovered/focused controls)
+
+Hotkeys inside workbench:
+- `F5`: refresh hex + disassembly
+- `Ctrl+H`: refresh hex
+- `Ctrl+D`: refresh disassembly
+- `Ctrl+S`: save
+- `Ctrl+R`: revert all in-memory edits
+- `Esc`: return to workspace
 
 If Textual is unavailable, use `--ui plain` with explicit CLI options.
 

@@ -100,6 +100,7 @@ def run_textual_workspace(callbacks):
         BINDINGS = [
             ("ctrl+c", "quit", "Quit"),
             ("ctrl+l", "clear_log", "Clear Log"),
+            ("ctrl+e", "open_editor_ui", "Editor UI"),
         ]
 
         def __init__(self):
@@ -127,6 +128,7 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
+                    "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
                     "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
                     "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
                     "edit-disasm [section] [max_lines] | edit-disasm-range <start> <stop> [section] [max_lines]\n"
@@ -183,6 +185,14 @@ def run_textual_workspace(callbacks):
             self._log(f"  change_count: {status['change_count']}")
             self._log(f"  disassembler: {status['disassembler']}")
 
+        def action_open_editor_ui(self):
+            editor = self._require_editor()
+            if not editor:
+                return
+            from ui.textual_editor import EditorWorkbenchScreen
+
+            self.push_screen(EditorWorkbenchScreen.build(editor))
+
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()
             event.input.value = ""
@@ -212,6 +222,7 @@ def run_textual_workspace(callbacks):
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
                     self._log("edit-open <elf> | edit-close | edit-status")
+                    self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
                     self._log("edit-show-elf | edit-set-elf <field> <value>")
                     self._log("edit-list-phdr | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>")
                     self._log("edit-list-shdr | edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value>")
@@ -360,6 +371,10 @@ def run_textual_workspace(callbacks):
                     self.editor = ElfBinaryEditor(args[0])
                     self._log(f"[green]Opened editor session:[/green] {self.editor.path}")
                     self._show_editor_status(self.editor)
+                    return
+
+                if command == "edit-ui":
+                    self.action_open_editor_ui()
                     return
 
                 if command == "edit-close":
