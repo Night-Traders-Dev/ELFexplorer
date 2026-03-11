@@ -22,6 +22,12 @@
 - Added GNU ar (`.a`) archive scanning with ELF member aggregation.
 - Extended crawl support to include all supported formats.
 - Added format regression tests in `tests/test_format_support.py`.
+- Added advanced ELF editing commands in Textual workspace:
+  - modify ELF header fields
+  - modify program header entries
+  - modify section header entries
+  - view disassembler-style hex dump ranges
+  - inspect pending edits, revert edits, and save edited binaries
 - Added Textual report command-palette actions (`Ctrl+P`) for:
   - exporting the current report to Markdown/PDF
   - switching metadata mode (`general`/`important`/`detailed`) and rescanning in-place
@@ -101,6 +107,7 @@ Current false-positive guardrails include:
 - `src/settings.py`: JSON settings loader/saver
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
+- `src/edit/elf_editor.py`: safe in-memory ELF header editor + hex viewer backend
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
 - `src/reporting/export.py`: Markdown/PDF export helpers
 - `src/reporting/tasks.py`: task-file batch runner (`scan` + `crawl`)
@@ -188,8 +195,30 @@ The workspace supports:
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - summary display (`show`)
+- advanced ELF editing:
+  - `edit-open <elf>` / `edit-close` / `edit-status`
+  - `edit-show-elf` / `edit-set-elf <field> <value>`
+  - `edit-list-phdr` / `edit-show-phdr <idx>` / `edit-set-phdr <idx> <field> <value>`
+  - `edit-list-shdr` / `edit-show-shdr <idx>` / `edit-set-shdr <idx> <field> <value>`
+  - `edit-hex [offset] [length] [width]`
+  - `edit-diff` / `edit-revert` / `edit-save [path]`
 
 If Textual is unavailable, use `--ui plain` with explicit CLI options.
+
+Example editor session:
+
+```bash
+python3 src/elfscan.py
+# inside workspace:
+edit-open test-bin/x86_64/hello_c
+edit-show-elf
+edit-set-elf e_flags 0x1
+edit-list-phdr
+edit-show-shdr 1
+edit-hex 0x0 0x100 16
+edit-diff
+edit-save reports/hello_c.edited.elf
+```
 
 ## Textual Report Palette
 

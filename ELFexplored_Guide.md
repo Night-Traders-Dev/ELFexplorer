@@ -72,6 +72,7 @@ Outputs are available as:
 - plain CLI report
 - Textual report UI
 - Textual workspace UX (interactive multi-scan workflow)
+- Textual workspace advanced ELF edit mode (in-memory header mutation + save/revert)
 - Markdown export
 - PDF export
 
@@ -115,7 +116,12 @@ Outputs are available as:
 - `src/ui/textual_report.py`
   - tabbed Textual report viewer
 - `src/ui/textual_workspace.py`
-  - interactive Textual workspace for scan/load/export workflows
+  - interactive Textual workspace for scan/load/export workflows and advanced ELF edit mode
+- `src/edit/elf_editor.py`
+  - safe in-memory ELF editing backend
+  - ELF/program/section header field mutation
+  - disassembler-style hex dump rendering
+  - change tracking + revert + save
 - `src/reporting/persistence.py`
   - JSON persistence APIs
 - `src/reporting/export.py`
@@ -312,8 +318,42 @@ Workspace commands:
 - `export-collection-md <path>`
 - `export-collection-pdf <path>`
 - `show`
+- `edit-open <elf>`
+- `edit-close`
+- `edit-status`
+- `edit-show-elf`
+- `edit-set-elf <field> <value>`
+- `edit-list-phdr`
+- `edit-show-phdr <index>`
+- `edit-set-phdr <index> <field> <value>`
+- `edit-list-shdr`
+- `edit-show-shdr <index>`
+- `edit-set-shdr <index> <field> <value>`
+- `edit-hex [offset] [length] [width]`
+- `edit-diff`
+- `edit-revert`
+- `edit-save [path]`
 - `help`
 - `quit`
+
+### 11.1 Advanced ELF Edit Mode Behavior
+
+Edit mode is session-based:
+1. open an ELF with `edit-open`
+2. inspect/update headers in memory
+3. review pending edits with `edit-diff`
+4. persist with `edit-save`, or discard with `edit-revert`
+
+Safety and constraints:
+- edits are in-memory until explicitly saved
+- integer range checks are enforced per field width
+- index bounds are enforced for program/section header operations
+- default save target is `<original_name>.modified`
+- unsupported/invalid operations raise explicit edit errors
+
+Hex viewer:
+- `edit-hex` prints offset/byte/ascii rows similar to disassembler hex panes
+- accepts decimal or `0x` numeric literals for offset/length/width
 
 ## 12. Report Layout Strategy
 

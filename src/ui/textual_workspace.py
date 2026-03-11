@@ -1,6 +1,7 @@
 import shlex
 from datetime import datetime, timezone
 
+from edit import ElfBinaryEditor, ElfEditError
 from settings import load_theme_preference, save_theme_preference
 
 
@@ -15,6 +16,21 @@ def _parse_bool(text, default=True):
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _parse_int_literal(text, label):
+    try:
+        return int(str(text), 0)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a numeric literal (examples: 10, 0x20).") from exc
+
+
+def _fmt_value(value):
+    if isinstance(value, int):
+        if value >= 0:
+            return f"{value} (0x{value:x})"
+        return str(value)
+    return str(value)
 
 
 def _collection_payload(reports):
@@ -90,6 +106,7 @@ def run_textual_workspace(callbacks):
             super().__init__()
             self.current_reports = []
             self.last_report = None
+            self.editor = None
 
         def _apply_saved_theme(self):
             saved_theme = load_theme_preference()
@@ -109,7 +126,10 @@ def run_textual_workspace(callbacks):
                     "Commands: help | scan <file> [mode] | crawl <dir> [mode] [recursive:true/false] [max_files]\n"
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
-                    "export-collection-md <path> | export-collection-pdf <path> | show | quit",
+                    "export-collection-md <path> | export-collection-pdf <path> | show\n"
+                    "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
+                    "edit-set-elf <field> <value> | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>\n"
+                    "edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value> | edit-diff | edit-revert | edit-save [path] | edit-close | quit",
                     id="help",
                 )
                 yield RichLog(id="log", wrap=True, markup=True)
@@ -142,6 +162,24 @@ def run_textual_workspace(callbacks):
             for index, report in enumerate(self.current_reports, start=1):
                 self._log(f"{index:>3}. {_report_brief(report)}")
 
+        def _require_editor(self):
+            if self.editor is None:
+                self._log("[red]No active editor session.[/red] Use: edit-open <elf>")
+                return None
+            return self.editor
+
+        def _show_editor_status(self, editor):
+            status = editor.status()
+            self._log("[bold]Editor status:[/bold]")
+            self._log(f"  path: {status['path']}")
+            self._log(f"  size: {status['size']} bytes")
+            self._log(f"  class: ELF{status['elf_class']}")
+            self._log(f"  endianness: {status['endianness']}")
+            self._log(f"  program_headers: {status['program_headers']}")
+            self._log(f"  section_headers: {status['section_headers']}")
+            self._log(f"  dirty: {status['dirty']}")
+            self._log(f"  change_count: {status['change_count']}")
+
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()
             event.input.value = ""
@@ -170,6 +208,11 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
+                    self._log("edit-open <elf> | edit-close | edit-status")
+                    self._log("edit-show-elf | edit-set-elf <field> <value>")
+                    self._log("edit-list-phdr | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>")
+                    self._log("edit-list-shdr | edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value>")
+                    self._log("edit-hex [offset] [length] [width] | edit-diff | edit-revert | edit-save [path]")
                     self._log("list-saved | show | quit")
                     return
 
@@ -303,7 +346,214 @@ def run_textual_workspace(callbacks):
                         self._log(f"  {line}")
                     return
 
+                if command == "edit-open":
+                    if not args:
+                        self._log("[red]Usage:[/red] edit-open <elf>")
+                        return
+                    self.editor = ElfBinaryEditor(args[0])
+                    self._log(f"[green]Opened editor session:[/green] {self.editor.path}")
+                    self._show_editor_status(self.editor)
+                    return
+
+                if command == "edit-close":
+                    if self.editor is None:
+                        self._log("No editor session to close.")
+                        return
+                    session_path = self.editor.path
+                    self.editor = None
+                    self._log(f"[green]Closed editor session:[/green] {session_path}")
+                    return
+
+                if command == "edit-status":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    self._show_editor_status(editor)
+                    return
+
+                if command == "edit-show-elf":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    header = editor.get_elf_header()
+                    self._log("[bold]ELF header fields:[/bold]")
+                    for key, value in header.items():
+                        self._log(f"  {key}: {_fmt_value(value)}")
+                    return
+
+                if command == "edit-set-elf":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 2:
+                        self._log("[red]Usage:[/red] edit-set-elf <field> <value>")
+                        return
+                    field = args[0]
+                    value = _parse_int_literal(args[1], "value")
+                    old, new = editor.set_elf_field(field, value)
+                    self._log(
+                        "[green]Updated ELF header:[/green] "
+                        f"{field} {_fmt_value(old)} -> {_fmt_value(new)}"
+                    )
+                    return
+
+                if command == "edit-list-phdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    headers = editor.list_program_headers()
+                    if not headers:
+                        self._log("No program headers found.")
+                        return
+                    self._log(f"[bold]Program headers ({len(headers)}):[/bold]")
+                    for index, item in enumerate(headers):
+                        self._log(
+                            f"  [{index:>3}] type=0x{item['p_type']:x} "
+                            f"flags=0x{item['p_flags']:x} "
+                            f"off=0x{item['p_offset']:x} "
+                            f"vaddr=0x{item['p_vaddr']:x} "
+                            f"filesz=0x{item['p_filesz']:x} "
+                            f"memsz=0x{item['p_memsz']:x}"
+                        )
+                    return
+
+                if command == "edit-show-phdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if not args:
+                        self._log("[red]Usage:[/red] edit-show-phdr <index>")
+                        return
+                    index = _parse_int_literal(args[0], "index")
+                    item = editor.get_program_header(index)
+                    self._log(f"[bold]Program header [{index}]:[/bold]")
+                    for key, value in item.items():
+                        self._log(f"  {key}: {_fmt_value(value)}")
+                    return
+
+                if command == "edit-set-phdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 3:
+                        self._log("[red]Usage:[/red] edit-set-phdr <index> <field> <value>")
+                        return
+                    index = _parse_int_literal(args[0], "index")
+                    field = args[1]
+                    value = _parse_int_literal(args[2], "value")
+                    old, new = editor.set_program_header_field(index, field, value)
+                    self._log(
+                        "[green]Updated program header:[/green] "
+                        f"[{index}] {field} {_fmt_value(old)} -> {_fmt_value(new)}"
+                    )
+                    return
+
+                if command == "edit-list-shdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    sections = editor.list_section_headers(resolve_names=True)
+                    if not sections:
+                        self._log("No section headers found.")
+                        return
+                    self._log(f"[bold]Section headers ({len(sections)}):[/bold]")
+                    for index, item in enumerate(sections):
+                        self._log(
+                            f"  [{index:>3}] {item.get('name', '<unnamed>')} "
+                            f"type=0x{item['sh_type']:x} "
+                            f"flags=0x{item['sh_flags']:x} "
+                            f"off=0x{item['sh_offset']:x} "
+                            f"size=0x{item['sh_size']:x}"
+                        )
+                    return
+
+                if command == "edit-show-shdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if not args:
+                        self._log("[red]Usage:[/red] edit-show-shdr <index>")
+                        return
+                    index = _parse_int_literal(args[0], "index")
+                    item = editor.get_section_header(index, resolve_name=True)
+                    self._log(f"[bold]Section header [{index}]:[/bold]")
+                    for key, value in item.items():
+                        self._log(f"  {key}: {_fmt_value(value)}")
+                    return
+
+                if command == "edit-set-shdr":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    if len(args) < 3:
+                        self._log("[red]Usage:[/red] edit-set-shdr <index> <field> <value>")
+                        return
+                    index = _parse_int_literal(args[0], "index")
+                    field = args[1]
+                    value = _parse_int_literal(args[2], "value")
+                    old, new = editor.set_section_header_field(index, field, value)
+                    self._log(
+                        "[green]Updated section header:[/green] "
+                        f"[{index}] {field} {_fmt_value(old)} -> {_fmt_value(new)}"
+                    )
+                    return
+
+                if command == "edit-hex":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    offset = _parse_int_literal(args[0], "offset") if len(args) >= 1 else 0
+                    length = _parse_int_literal(args[1], "length") if len(args) >= 2 else 256
+                    width = _parse_int_literal(args[2], "width") if len(args) >= 3 else 16
+                    dump = editor.hex_view(offset=offset, length=length, width=width)
+                    if not dump:
+                        self._log("Hex view is empty for the requested range.")
+                        return
+                    self._log(
+                        f"[bold]Hex view:[/bold] offset=0x{offset:x} length={length} width={width}"
+                    )
+                    for line in dump.splitlines():
+                        self._log(f"  {line}")
+                    return
+
+                if command == "edit-diff":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    changes = editor.get_changes()
+                    if not changes:
+                        self._log("No pending in-memory edits.")
+                        return
+                    self._log(f"[bold]Pending edits ({len(changes)}):[/bold]")
+                    for index, change in enumerate(changes, start=1):
+                        scope = change["scope"]
+                        target = f"{scope}[{change['index']}]" if change["index"] is not None else scope
+                        self._log(
+                            f"  {index:>3}. {target}.{change['field']} "
+                            f"{_fmt_value(change['old'])} -> {_fmt_value(change['new'])}"
+                        )
+                    return
+
+                if command == "edit-revert":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    editor.revert()
+                    self._log("[green]Reverted all in-memory edits to the original file.[/green]")
+                    return
+
+                if command == "edit-save":
+                    editor = self._require_editor()
+                    if not editor:
+                        return
+                    target = args[0] if args else None
+                    saved = editor.save(path=target)
+                    self._log(f"[green]Saved edited binary:[/green] {saved}")
+                    return
+
                 self._log(f"[red]Unknown command:[/red] {command}")
+            except (ValueError, ElfEditError) as exc:
+                self._log(f"[red]Error:[/red] {exc}")
             except Exception as exc:
                 self._log(f"[red]Error:[/red] {exc}")
 
