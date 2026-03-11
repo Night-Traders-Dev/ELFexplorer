@@ -40,6 +40,9 @@ def score_build_system_symbols(elf, scores):
     if any("dart" in name for name in symbols):
         scores["Dart/Flutter"] += 3
 
+    if any("rust" in name or name.startswith("_r") for name in symbols):
+        scores["Cargo"] += 2
+
 
 def score_build_system_dynamic_libs(elf, scores):
     dynamic = elf.get_section_by_name(".dynamic")
@@ -54,3 +57,5 @@ def score_build_system_dynamic_libs(elf, scores):
             scores["MSBuild"] += 4
         if "libzig" in needed:
             scores["Zig Build"] += 4
+        if "libgradle" in needed:
+            scores["Gradle"] += 4

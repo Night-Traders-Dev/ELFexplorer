@@ -1,16 +1,16 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Tests](https://img.shields.io/badge/tests-unittest%20heuristics%20%2B%20corpus-brightgreen)](#testing)
 
-`ELFexplorer` is a modular ELF analysis and heuristic fingerprinting tool focused on language and compiler inference.
+`ELFexplorer` is a modular ELF analysis and heuristic fingerprinting tool focused on language, compiler, and build-system inference.
 
 It currently provides:
 - Structured ELF metadata reporting (general/important/detailed modes)
 - Heuristic source-language detection
-- Heuristic compiler detection (GCC vs Clang)
+- Heuristic compiler/assembler detection
 - Heuristic host build-system detection
 - Corpus-driven validation over multi-architecture test binaries
 
@@ -29,6 +29,10 @@ Current language labels:
 - `Fortran`
 - `Nim`
 - `Zig`
+- `Haskell`
+- `OCaml`
+- `Julia`
+- `Lua`
 - `Swift`
 - `Java`
 - `Python`
@@ -39,10 +43,19 @@ Current language labels:
 Current compiler labels:
 - `GCC`
 - `Clang`
-- `Ambiguous: GCC/Clang`
+- `Rustc`
+- `Go gc`
+- `Zig`
+- `NASM`
+- `FASM`
+- `MASM`
+- `TASM`
+- `GHC`
+- `OCamlopt`
+- `Ambiguous: ...`
 - `Unknown`
 
-Compiler inference is intentionally conservative outside C/C++/ASM binaries and will usually return `Unknown` for other languages.
+Compiler inference is language-aware when language detection is decisive, and falls back to `Unknown` when evidence is weak or conflicting.
 
 ## Build-System Detection
 
@@ -55,6 +68,10 @@ Current host build-system labels:
 - `Make`
 - `Autotools`
 - `MSBuild`
+- `Gradle`
+- `SCons`
+- `XMake`
+- `Buck2`
 - `Go Toolchain`
 - `Dart/Flutter`
 - `Zig Build`
@@ -104,7 +121,7 @@ python3 src/elfscan.py --version
 ## Versioning
 
 - Canonical project version is tracked in the root [`VERSION`](VERSION) file.
-- Current version: `0.1.0`
+- Current version: `0.2.0`
 - The CLI reports this via:
 
 ```bash
@@ -191,9 +208,28 @@ Detection is heuristic, not ground truth. It combines:
 - debug/comment string hints
 - DWARF producer detection (for GCC/Clang inference)
 - runtime API marker strings
+- disassembly-inspired opcode pattern scanning in `.text` for stripped/minimal binaries
 - binary-shape rules (for ASM)
+- assembler-family marker detection (`NASM`, `FASM`, `MASM`, `TASM`) from producer/comment/string evidence
 
 See `ELFexplored_Guide.md` for full details.
+
+## Research Sources
+
+Recent heuristics were derived from official/toolchain documentation, including:
+- Rust symbol mangling and compiler details: https://doc.rust-lang.org/rustc/symbol-mangling/index.html
+- Go build ID note behavior in ELF (`.note.go.buildid`): https://pkg.go.dev/cmd/internal/buildid
+- GHC runtime embedding (`hs_init` / `hs_exit`): https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/ffi.html
+- OCaml native/runtime entry points (`caml_startup`, `caml_main`): https://ocaml.org/manual/intfc.html
+- Julia embedding API (`jl_init`, `jl_atexit_hook`): https://docs.julialang.org/en/v1/manual/embedding/
+- Lua C API (`luaL_newstate`, `lua_pcall`): https://www.lua.org/manual/5.4/manual.html
+- NASM reference (`Netwide Assembler`): https://www.nasm.us/doc/
+- MASM reference (`Microsoft Macro Assembler`): https://learn.microsoft.com/en-us/cpp/assembler/masm/microsoft-macro-assembler-reference
+- GNU objdump disassembly options: https://sourceware.org/binutils/docs/binutils/objdump.html
+- Cargo output directory conventions (`target/debug`, `target/release`): https://doc.rust-lang.org/cargo/guide/build-cache.html
+- CMake generated build tree conventions (`CMakeFiles`): https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html
+- Bazel output paths (`bazel-out`): https://bazel.build/remote/output-directories
+- Gradle project cache directory (`.gradle`): https://docs.gradle.org/current/userguide/directory_layout.html
 
 ## License
 

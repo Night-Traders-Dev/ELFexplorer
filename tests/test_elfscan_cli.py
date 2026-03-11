@@ -78,6 +78,10 @@ class ElfscanCorpusCLITests(unittest.TestCase):
             "rust": "Rust",
             "nim": "Nim",
             "zig": "Zig",
+            "haskell": "Haskell",
+            "ocaml": "OCaml",
+            "julia": "Julia",
+            "lua": "Lua",
             "sage": "SageLang",
             "sagelang": "SageLang",
         }

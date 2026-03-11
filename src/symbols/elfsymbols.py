@@ -143,6 +143,14 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             scores["Java"] += 2
         if "pyinit" in name or "python" in name:
             scores["Python"] += 2
+        if name.startswith("hs_") or name.startswith("stg_") or name.startswith("rts_") or "ghczm" in name:
+            scores["Haskell"] += 3
+        if name.startswith("caml_") or name.startswith("caml"):
+            scores["OCaml"] += 3
+        if name.startswith("jl_") or name.startswith("julia_"):
+            scores["Julia"] += 3
+        if name.startswith("lua_") or name.startswith("lual_") or "luajit" in name:
+            scores["Lua"] += 3
 
         if "rust" in name:
             scores["Rust"] += 1

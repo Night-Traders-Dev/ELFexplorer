@@ -14,6 +14,18 @@ def read_section_data(elf, section_name, max_bytes=262144):
         return None
 
 
+def read_section_bytes(elf, section_name, max_bytes=262144):
+    section = elf.get_section_by_name(section_name)
+    if not section:
+        return None
+
+    try:
+        return section.data()[:max_bytes]
+    except Exception as exc:
+        print(f"Error reading raw bytes from {section_name}: {exc}")
+        return None
+
+
 def collect_symbol_names(symtab, dynsym):
     names = set()
     for section in (symtab, dynsym):

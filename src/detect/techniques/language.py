@@ -2,9 +2,13 @@ from detect.constants import (
     CSHARP_STRING_MARKERS,
     DART_STRONG_MARKERS,
     DART_TOKEN_PATTERN,
+    HASKELL_STRING_MARKERS,
+    JULIA_STRING_MARKERS,
     LANGUAGE_STRING_SCAN_SECTIONS,
+    LUA_STRING_MARKERS,
     NIM_STRING_MARKERS,
     NOTE_SECTIONS,
+    OCAML_STRING_MARKERS,
     SAGELANG_GENERATED_C_PATTERN,
     SAGELANG_RUNTIME_STRINGS,
     SAGELANG_STRONG_STRING_MARKERS,
@@ -41,6 +45,14 @@ def score_comment_section(elf, scores):
             scores["Fortran"] += 3
         if "nim" in data:
             scores["Nim"] += 3
+        if "ocaml" in data:
+            scores["OCaml"] += 3
+        if "haskell" in data or "ghc" in data:
+            scores["Haskell"] += 3
+        if "julia" in data or "libjulia" in data:
+            scores["Julia"] += 3
+        if "lua" in data or "luajit" in data:
+            scores["Lua"] += 3
         if "swift" in data:
             scores["Swift"] += 3
         if "javac" in data or "openjdk" in data:
@@ -97,6 +109,14 @@ def score_dynamic_section(elf, scores):
                 scores["Fortran"] += 3
             if "nim" in needed:
                 scores["Nim"] += 3
+            if "libasmrun" in needed or "ocaml" in needed:
+                scores["OCaml"] += 4
+            if "libhsrts" in needed or needed.startswith("libhs"):
+                scores["Haskell"] += 4
+            if "libjulia" in needed:
+                scores["Julia"] += 6
+            if "liblua" in needed or "luajit" in needed:
+                scores["Lua"] += 5
             if "swift" in needed:
                 scores["Swift"] += 3
             if "jvm" in needed or "java" in needed:
@@ -145,6 +165,10 @@ def score_general_language_strings(elf, scores):
     csharp_markers = set()
     nim_markers = set()
     zig_markers = set()
+    haskell_markers = set()
+    ocaml_markers = set()
+    julia_markers = set()
+    lua_markers = set()
     dart_token_count = 0
     zig_token_count = 0
 
@@ -165,6 +189,18 @@ def score_general_language_strings(elf, scores):
         for marker in ZIG_STRING_MARKERS:
             if marker in data:
                 zig_markers.add(marker)
+        for marker in HASKELL_STRING_MARKERS:
+            if marker in data:
+                haskell_markers.add(marker)
+        for marker in OCAML_STRING_MARKERS:
+            if marker in data:
+                ocaml_markers.add(marker)
+        for marker in JULIA_STRING_MARKERS:
+            if marker in data:
+                julia_markers.add(marker)
+        for marker in LUA_STRING_MARKERS:
+            if marker in data:
+                lua_markers.add(marker)
 
         dart_token_count += len(DART_TOKEN_PATTERN.findall(data))
         zig_token_count += len(ZIG_TOKEN_PATTERN.findall(data))
@@ -198,6 +234,26 @@ def score_general_language_strings(elf, scores):
         scores["Zig"] += 6
     elif zig_token_count >= 2:
         scores["Zig"] += 3
+
+    if len(haskell_markers) >= 2:
+        scores["Haskell"] += 7
+    elif len(haskell_markers) >= 1:
+        scores["Haskell"] += 3
+
+    if len(ocaml_markers) >= 2:
+        scores["OCaml"] += 7
+    elif len(ocaml_markers) >= 1:
+        scores["OCaml"] += 3
+
+    if len(julia_markers) >= 2:
+        scores["Julia"] += 8
+    elif len(julia_markers) >= 1:
+        scores["Julia"] += 4
+
+    if len(lua_markers) >= 2:
+        scores["Lua"] += 6
+    elif len(lua_markers) >= 1:
+        scores["Lua"] += 3
 
 
 def score_sagelang_strings(elf, scores):
@@ -272,6 +328,14 @@ def score_debug_info(elf, scores):
             scores["Fortran"] += 2
         if b"nim" in data:
             scores["Nim"] += 2
+        if b"ocaml" in data or b"caml_" in data:
+            scores["OCaml"] += 3
+        if b"haskell" in data or b"ghc" in data:
+            scores["Haskell"] += 3
+        if b"julia" in data or b"jl_init" in data:
+            scores["Julia"] += 3
+        if b"lua" in data or b"luajit" in data:
+            scores["Lua"] += 2
         if b"swift" in data:
             scores["Swift"] += 2
         if b"javac" in data or b"openjdk" in data:
@@ -306,6 +370,12 @@ def score_section_names(elf, scores):
             scores["Fortran"] += 2
         if section_name == ".nim":
             scores["Nim"] += 2
+        if section_name in [".ocaml", ".caml"]:
+            scores["OCaml"] += 3
+        if section_name in [".julia", ".julia_consts"]:
+            scores["Julia"] += 3
+        if section_name in [".lua", ".luajit"]:
+            scores["Lua"] += 3
         if section_name == ".swift":
             scores["Swift"] += 2
         if section_name in [".jvm", ".java"]:

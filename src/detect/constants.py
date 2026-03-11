@@ -13,6 +13,10 @@ SUPPORTED_LANGUAGES = (
     "Fortran",
     "Nim",
     "Zig",
+    "Haskell",
+    "OCaml",
+    "Julia",
+    "Lua",
     "Swift",
     "Java",
     "Python",
@@ -30,8 +34,6 @@ NOTE_SECTIONS = {
     ".note.sagelang": "SageLang",
 }
 
-COMPILER_HEURISTICS = ("GCC", "Clang")
-
 BUILD_SYSTEM_HEURISTICS = (
     "CMake",
     "Meson",
@@ -41,6 +43,10 @@ BUILD_SYSTEM_HEURISTICS = (
     "Make",
     "Autotools",
     "MSBuild",
+    "Gradle",
+    "SCons",
+    "XMake",
+    "Buck2",
     "Go Toolchain",
     "Dart/Flutter",
     "Zig Build",
@@ -126,6 +132,50 @@ ZIG_STRING_MARKERS = (
     b"zig_stack",
 )
 
+HASKELL_STRING_MARKERS = (
+    b"libhsrts",
+    b"ghczmprim",
+    b"ghc",
+    b"hs_init",
+    b"stg_",
+)
+
+OCAML_STRING_MARKERS = (
+    b"caml_startup",
+    b"caml_main",
+    b"libasmrun",
+    b"ocamlrun",
+    b"ocamlopt",
+)
+
+JULIA_STRING_MARKERS = (
+    b"libjulia",
+    b"jl_init",
+    b"jl_atexit_hook",
+    b"julia_main",
+)
+
+LUA_STRING_MARKERS = (
+    b"lua_pcall",
+    b"lual_newstate",
+    b"lua_tolstring",
+    b"luajit",
+)
+
+COMPILER_HEURISTICS = (
+    "GCC",
+    "Clang",
+    "Rustc",
+    "Go gc",
+    "Zig",
+    "NASM",
+    "FASM",
+    "MASM",
+    "TASM",
+    "GHC",
+    "OCamlopt",
+)
+
 COMPILER_CLANG_STRING_MARKERS = (
     b"clang version",
     b"apple clang",
@@ -144,6 +194,58 @@ COMPILER_GCC_STRING_MARKERS = (
     b" cc1",
 )
 
+COMPILER_RUSTC_STRING_MARKERS = (
+    b"rustc version",
+    b"rustc ",
+    b"rust_begin_unwind",
+)
+
+COMPILER_GO_STRING_MARKERS = (
+    b"go build id",
+    b"cmd/go",
+    b"golang.org/",
+)
+
+COMPILER_ZIG_STRING_MARKERS = (
+    b"ziglang",
+    b"zig ",
+    b"__zig_",
+)
+
+COMPILER_GHC_STRING_MARKERS = (
+    b"the glorious glasgow haskell compilation system",
+    b"ghc-",
+    b"libhsrts",
+)
+
+COMPILER_OCAMLOPT_STRING_MARKERS = (
+    b"ocamlopt",
+    b"libasmrun",
+    b"caml_startup",
+)
+
+COMPILER_NASM_STRING_MARKERS = (
+    b"netwide assembler",
+    b"nasm",
+)
+
+COMPILER_FASM_STRING_MARKERS = (
+    b"flat assembler",
+    b"fasm",
+)
+
+COMPILER_MASM_STRING_MARKERS = (
+    b"microsoft macro assembler",
+    b"masm",
+    b"ml.exe",
+)
+
+COMPILER_TASM_STRING_MARKERS = (
+    b"turbo assembler",
+    b"tasm",
+    b"tasm32",
+)
+
 COMPILER_CLANG_SYMBOL_MARKERS = (
     "__clang_call_terminate",
     "___clang_call_terminate",
@@ -157,6 +259,57 @@ COMPILER_GCC_SYMBOL_MARKERS = (
     "__gcov_exit",
     "__gcov_merge_add",
     "__gcov_merge_single",
+)
+
+COMPILER_RUSTC_SYMBOL_MARKERS = (
+    "rust_eh_personality",
+    "__rust_alloc",
+    "__rust_dealloc",
+    "rust_begin_unwind",
+)
+
+COMPILER_GO_SYMBOL_MARKERS = (
+    "runtime.main",
+    "runtime.rt0_go",
+    "go.itab.",
+)
+
+COMPILER_ZIG_SYMBOL_MARKERS = (
+    "__zig_probe_stack",
+    "__zig_return_error",
+    "zig_panic",
+)
+
+COMPILER_GHC_SYMBOL_MARKERS = (
+    "hs_init",
+    "stg_ap_",
+    "rts_",
+)
+
+COMPILER_OCAMLOPT_SYMBOL_MARKERS = (
+    "caml_startup",
+    "caml_main",
+    "caml_alloc",
+)
+
+COMPILER_NASM_SYMBOL_MARKERS = (
+    "__nasm",
+    "nasm_",
+)
+
+COMPILER_FASM_SYMBOL_MARKERS = (
+    "__fasm",
+    "fasm_",
+)
+
+COMPILER_MASM_SYMBOL_MARKERS = (
+    "__masm",
+    "masm_",
+)
+
+COMPILER_TASM_SYMBOL_MARKERS = (
+    "__tasm",
+    "tasm_",
 )
 
 BUILD_SYSTEM_MARKERS = {
@@ -199,6 +352,26 @@ BUILD_SYSTEM_MARKERS = {
         b".csproj",
         b"microsoft.net.sdk",
         b"/obj/debug/",
+    ),
+    "Gradle": (
+        b"/.gradle/",
+        b"build.gradle",
+        b"gradle/wrapper",
+    ),
+    "SCons": (
+        b"sconstruct",
+        b"sconsign",
+        b"/.sconsign",
+    ),
+    "XMake": (
+        b"xmake.lua",
+        b"/.xmake/",
+        b"xmake-repo",
+    ),
+    "Buck2": (
+        b"buck-out/",
+        b"buck2",
+        b"buckconfig",
     ),
     "Go Toolchain": (
         b"go build id",

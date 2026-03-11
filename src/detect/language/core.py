@@ -10,6 +10,7 @@ from detect.techniques.language import (
     score_section_names,
     score_symbol_tables,
 )
+from detect.techniques.disassembly import score_disassembly_patterns
 from detect.utils import empty_scores
 
 
@@ -29,6 +30,7 @@ def detect_source_language(elf):
     score_debug_info(elf, scores)
     score_section_names(elf, scores)
     score_asm_patterns(elf, symtab, dynsym, scores)
+    score_disassembly_patterns(elf, scores)
 
     has_symbols = False
     if symtab and symtab.num_symbols() > 0:

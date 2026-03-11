@@ -76,6 +76,7 @@ High-level flow:
    - debug information snippets
    - section-name patterns
    - binary-shape heuristics (ASM)
+   - disassembly-inspired opcode pattern scans in `.text`
 4. Print score tables.
 5. Pick label with highest score.
 6. Resolve ties as `Ambiguous: ...`.
@@ -84,11 +85,20 @@ High-level flow:
 Compiler detection follows a similar but separate scoring pass and returns:
 - `GCC`
 - `Clang`
-- `Ambiguous: GCC/Clang`
+- `Rustc`
+- `Go gc`
+- `Zig`
+- `NASM`
+- `FASM`
+- `MASM`
+- `TASM`
+- `GHC`
+- `OCamlopt`
+- `Ambiguous: ...`
 - `Unknown`
 
 Build-system detection follows another independent scoring pass and returns labels like:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
 - or `Ambiguous: ...` / `Unknown`
 
 ## 5. Scoring Strategy
@@ -219,16 +229,40 @@ Common evidence:
 - Sage runtime marker clusters (`sage_try_stack`, `sage_exception_value`, `sage_method_table`, `sage_class_registry`)
 - Sage-specific runtime error strings plus anchors
 
-## 7. Compiler Detection (GCC vs Clang)
+### 6.17 Haskell
+
+Common evidence:
+- `hs_init`, `stg_*`, `rts_*` symbol families
+- `libHSrts` runtime linkage and GHC string markers
+
+### 6.18 OCaml
+
+Common evidence:
+- `caml_startup`, `caml_main`, `caml_*` symbols
+- runtime linkage markers such as `libasmrun`
+
+### 6.19 Julia
+
+Common evidence:
+- embedding/runtime symbols (`jl_init`, `jl_atexit_hook`, `julia_*`)
+- `libjulia` markers in strings/dependencies
+
+### 6.20 Lua
+
+Common evidence:
+- Lua C API symbols (`lua_*`, `luaL_*`, `lua_pcall*`)
+- `liblua` / `luajit` runtime markers
+
+## 7. Compiler and Assembler Detection
 
 Compiler detection is separate from language detection.
 
 Evidence sources:
-- `.comment` (`GCC`, `clang`)
+- `.comment` and debug strings (GCC/Clang/Rustc/Go/Zig and assembler markers)
 - DWARF compile-unit producers (`DW_AT_producer`)
-- `.GCC.command.line` and LLVM section-family hints
-- marker symbols (`__clang_call_terminate`, `__llvm_*`, `__gcov_*`)
-- dynamic libs (`libclang_rt`/`libc++` vs `libgcc`/`libstdc++`)
+- `.GCC.command.line` and note/section hints (`.note.go.buildid`, `.note.rustc`, assembler note sections)
+- marker symbols (`__clang_call_terminate`, `__gcov_*`, Rust/Go/Zig/runtime and assembler-specific markers)
+- dynamic libs (`libclang_rt`/`libc++` vs `libgcc`/`libstdc++`, plus `libHSrts`, `libasmrun`)
 
 Output:
 - strongest positive bucket wins
@@ -236,8 +270,8 @@ Output:
 - weak/no signal -> unknown (minimum confidence threshold applied)
 
 Scope note:
-- compiler inference is primarily for C/C++/ASM artifacts
-- non-C-family artifacts are gated to `Unknown` unless explicit compiler banners are present
+- compiler selection is language-aware when language detection is decisive
+- ASM binaries can now resolve assembler toolchains (`NASM`, `FASM`, `MASM`, `TASM`) when producer/comment/debug markers exist
 
 ## 8. Build-System Detection
 
@@ -249,7 +283,7 @@ Evidence sources:
 - language-runtime symbols and dynamic dependencies (Go, Dart/Flutter, .NET, Zig)
 
 Outputs include:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`
 - `Ambiguous: ...` or `Unknown`
 
 ## 9. CLI Visual Design
@@ -294,8 +328,10 @@ Verbosity levels:
 - C# runtime dependency detection
 - Zig marker detection
 - Nim symbol detection
-- GCC/Clang compiler inference
+- Haskell/OCaml/Julia/Lua language inference
+- GCC/Clang/Rustc/Go/NASM/FASM/MASM/TASM compiler inference
 - build-system inference basics
+- disassembly-pattern ASM boosting
 
 Benefits:
 - fast execution
@@ -393,7 +429,24 @@ Rebuild and sync hello corpus fixtures:
 python3 build_hello.py --all
 ```
 
-## 17. Summary
+## 17. Research References
+
+The current heuristic expansion was informed by official/toolchain docs:
+- Rust symbol mangling: https://doc.rust-lang.org/rustc/symbol-mangling/index.html
+- Go build IDs and ELF note behavior: https://pkg.go.dev/cmd/internal/buildid
+- GHC FFI runtime init (`hs_init`): https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/ffi.html
+- OCaml C interface/runtime startup (`caml_startup`): https://ocaml.org/manual/intfc.html
+- Julia embedding (`jl_init`, `jl_atexit_hook`): https://docs.julialang.org/en/v1/manual/embedding/
+- Lua C API reference: https://www.lua.org/manual/5.4/manual.html
+- NASM documentation: https://www.nasm.us/doc/
+- MASM reference: https://learn.microsoft.com/en-us/cpp/assembler/masm/microsoft-macro-assembler-reference
+- GNU objdump disassembly options: https://sourceware.org/binutils/docs/binutils/objdump.html
+- Cargo build output directories: https://doc.rust-lang.org/cargo/guide/build-cache.html
+- CMake build system conventions: https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html
+- Bazel output directories: https://bazel.build/remote/output-directories
+- Gradle directory layout: https://docs.gradle.org/current/userguide/directory_layout.html
+
+## 18. Summary
 
 `ELFexplorer` is an evidence-driven ELF fingerprinting framework with:
 - broad multi-language heuristics

@@ -1,9 +1,27 @@
 from detect.constants import (
     COMPILER_CLANG_STRING_MARKERS,
     COMPILER_CLANG_SYMBOL_MARKERS,
+    COMPILER_GHC_STRING_MARKERS,
+    COMPILER_GHC_SYMBOL_MARKERS,
+    COMPILER_GO_STRING_MARKERS,
+    COMPILER_GO_SYMBOL_MARKERS,
     COMPILER_GCC_STRING_MARKERS,
     COMPILER_GCC_SYMBOL_MARKERS,
+    COMPILER_MASM_STRING_MARKERS,
+    COMPILER_MASM_SYMBOL_MARKERS,
+    COMPILER_NASM_STRING_MARKERS,
+    COMPILER_NASM_SYMBOL_MARKERS,
+    COMPILER_OCAMLOPT_STRING_MARKERS,
+    COMPILER_OCAMLOPT_SYMBOL_MARKERS,
+    COMPILER_RUSTC_STRING_MARKERS,
+    COMPILER_RUSTC_SYMBOL_MARKERS,
     COMPILER_STRING_SCAN_SECTIONS,
+    COMPILER_TASM_STRING_MARKERS,
+    COMPILER_TASM_SYMBOL_MARKERS,
+    COMPILER_FASM_STRING_MARKERS,
+    COMPILER_FASM_SYMBOL_MARKERS,
+    COMPILER_ZIG_STRING_MARKERS,
+    COMPILER_ZIG_SYMBOL_MARKERS,
 )
 from detect.utils import collect_symbol_names, iter_dynamic_needed, read_section_data
 
@@ -17,11 +35,32 @@ def score_compiler_sections(elf, compiler_scores):
 
     if ".gcc.command.line" in section_names:
         compiler_scores["GCC"] += 5
+    if ".note.go.buildid" in section_names:
+        compiler_scores["Go gc"] += 8
+    if ".note.rustc" in section_names:
+        compiler_scores["Rustc"] += 8
+    if ".note.nasm" in section_names or ".nasm" in section_names:
+        compiler_scores["NASM"] += 5
+    if ".note.fasm" in section_names or ".fasm" in section_names:
+        compiler_scores["FASM"] += 5
+    if ".note.masm" in section_names or ".masm" in section_names:
+        compiler_scores["MASM"] += 5
+    if ".note.tasm" in section_names or ".tasm" in section_names:
+        compiler_scores["TASM"] += 5
 
 
 def score_compiler_strings(elf, compiler_scores):
     clang_hits = 0
     gcc_hits = 0
+    rustc_hits = 0
+    go_hits = 0
+    zig_hits = 0
+    nasm_hits = 0
+    fasm_hits = 0
+    masm_hits = 0
+    tasm_hits = 0
+    ghc_hits = 0
+    ocamlopt_hits = 0
 
     for section_name in COMPILER_STRING_SCAN_SECTIONS:
         data = read_section_data(elf, section_name, max_bytes=262144)
@@ -34,6 +73,33 @@ def score_compiler_strings(elf, compiler_scores):
         for marker in COMPILER_GCC_STRING_MARKERS:
             if marker in data:
                 gcc_hits += 1
+        for marker in COMPILER_RUSTC_STRING_MARKERS:
+            if marker in data:
+                rustc_hits += 1
+        for marker in COMPILER_GO_STRING_MARKERS:
+            if marker in data:
+                go_hits += 1
+        for marker in COMPILER_ZIG_STRING_MARKERS:
+            if marker in data:
+                zig_hits += 1
+        for marker in COMPILER_NASM_STRING_MARKERS:
+            if marker in data:
+                nasm_hits += 1
+        for marker in COMPILER_FASM_STRING_MARKERS:
+            if marker in data:
+                fasm_hits += 1
+        for marker in COMPILER_MASM_STRING_MARKERS:
+            if marker in data:
+                masm_hits += 1
+        for marker in COMPILER_TASM_STRING_MARKERS:
+            if marker in data:
+                tasm_hits += 1
+        for marker in COMPILER_GHC_STRING_MARKERS:
+            if marker in data:
+                ghc_hits += 1
+        for marker in COMPILER_OCAMLOPT_STRING_MARKERS:
+            if marker in data:
+                ocamlopt_hits += 1
 
     if clang_hits >= 3:
         compiler_scores["Clang"] += 10
@@ -44,6 +110,51 @@ def score_compiler_strings(elf, compiler_scores):
         compiler_scores["GCC"] += 10
     elif gcc_hits >= 1:
         compiler_scores["GCC"] += 5
+
+    if rustc_hits >= 3:
+        compiler_scores["Rustc"] += 10
+    elif rustc_hits >= 1:
+        compiler_scores["Rustc"] += 5
+
+    if go_hits >= 2:
+        compiler_scores["Go gc"] += 10
+    elif go_hits >= 1:
+        compiler_scores["Go gc"] += 5
+
+    if zig_hits >= 2:
+        compiler_scores["Zig"] += 8
+    elif zig_hits >= 1:
+        compiler_scores["Zig"] += 4
+
+    if nasm_hits >= 2:
+        compiler_scores["NASM"] += 8
+    elif nasm_hits >= 1:
+        compiler_scores["NASM"] += 4
+
+    if fasm_hits >= 2:
+        compiler_scores["FASM"] += 8
+    elif fasm_hits >= 1:
+        compiler_scores["FASM"] += 4
+
+    if masm_hits >= 2:
+        compiler_scores["MASM"] += 8
+    elif masm_hits >= 1:
+        compiler_scores["MASM"] += 4
+
+    if tasm_hits >= 2:
+        compiler_scores["TASM"] += 8
+    elif tasm_hits >= 1:
+        compiler_scores["TASM"] += 4
+
+    if ghc_hits >= 2:
+        compiler_scores["GHC"] += 8
+    elif ghc_hits >= 1:
+        compiler_scores["GHC"] += 4
+
+    if ocamlopt_hits >= 2:
+        compiler_scores["OCamlopt"] += 8
+    elif ocamlopt_hits >= 1:
+        compiler_scores["OCamlopt"] += 4
 
 
 def score_compiler_dwarf_producer(elf, compiler_scores):
@@ -68,6 +179,24 @@ def score_compiler_dwarf_producer(elf, compiler_scores):
                 compiler_scores["Clang"] += 10
             if "gcc" in value or "gnu c" in value or "gnu c++" in value:
                 compiler_scores["GCC"] += 10
+            if "rustc" in value:
+                compiler_scores["Rustc"] += 10
+            if "go cmd/compile" in value or "golang" in value:
+                compiler_scores["Go gc"] += 10
+            if "zig" in value:
+                compiler_scores["Zig"] += 8
+            if "nasm" in value or "netwide assembler" in value:
+                compiler_scores["NASM"] += 8
+            if "fasm" in value or "flat assembler" in value:
+                compiler_scores["FASM"] += 8
+            if "masm" in value or "macro assembler" in value:
+                compiler_scores["MASM"] += 8
+            if "tasm" in value or "turbo assembler" in value:
+                compiler_scores["TASM"] += 8
+            if "the glorious glasgow haskell compilation system" in value or "ghc" in value:
+                compiler_scores["GHC"] += 8
+            if "ocamlopt" in value:
+                compiler_scores["OCamlopt"] += 8
     except Exception as exc:
         print(f"Error processing DWARF producer for compiler detection: {exc}")
 
@@ -84,6 +213,33 @@ def score_compiler_symbols(elf, compiler_scores):
     for marker in COMPILER_GCC_SYMBOL_MARKERS:
         if marker in symbols:
             compiler_scores["GCC"] += 4
+
+    if any(marker in name for marker in COMPILER_RUSTC_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["Rustc"] += 5
+
+    if any(name.startswith(marker) for marker in COMPILER_GO_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["Go gc"] += 5
+
+    if any(marker in name for marker in COMPILER_ZIG_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["Zig"] += 5
+
+    if any(marker in name for marker in COMPILER_NASM_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["NASM"] += 5
+
+    if any(marker in name for marker in COMPILER_FASM_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["FASM"] += 5
+
+    if any(marker in name for marker in COMPILER_MASM_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["MASM"] += 5
+
+    if any(marker in name for marker in COMPILER_TASM_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["TASM"] += 5
+
+    if any(name.startswith(marker) for marker in COMPILER_GHC_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["GHC"] += 5
+
+    if any(name.startswith(marker) for marker in COMPILER_OCAMLOPT_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["OCamlopt"] += 5
 
 
 def score_compiler_dynamic_libs(elf, compiler_scores):
@@ -102,3 +258,9 @@ def score_compiler_dynamic_libs(elf, compiler_scores):
             compiler_scores["GCC"] += 4
         if "libstdc++" in needed:
             compiler_scores["GCC"] += 2
+        if "libhsrts" in needed:
+            compiler_scores["GHC"] += 6
+        if "libasmrun" in needed:
+            compiler_scores["OCamlopt"] += 6
+        if "libzig" in needed:
+            compiler_scores["Zig"] += 4

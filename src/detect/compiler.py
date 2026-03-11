@@ -33,6 +33,23 @@ def _has_explicit_compiler_banner(elf):
     )
 
 
+def _allowed_compilers_for_language(source_language):
+    if not source_language or source_language == "Unknown" or source_language.startswith("Ambiguous:"):
+        return None
+
+    language_compiler_map = {
+        "ASM": {"GCC", "Clang", "Zig", "NASM", "FASM", "MASM", "TASM"},
+        "C": {"GCC", "Clang", "Zig"},
+        "C++": {"GCC", "Clang", "Zig"},
+        "Rust": {"Rustc"},
+        "Go": {"Go gc"},
+        "Zig": {"Zig"},
+        "Haskell": {"GHC"},
+        "OCaml": {"OCamlopt"},
+    }
+    return language_compiler_map.get(source_language)
+
+
 def detect_compiler(elf, source_language=None):
     compiler_scores = empty_scores(COMPILER_HEURISTICS)
 
@@ -46,12 +63,25 @@ def detect_compiler(elf, source_language=None):
     for compiler, score in compiler_scores.items():
         print(f"  {compiler}: {score}")
 
-    max_score = max(compiler_scores.values())
+    explicit_banner = _has_explicit_compiler_banner(elf)
+    allowed = _allowed_compilers_for_language(source_language)
+
+    selected_scores = dict(compiler_scores)
+    if allowed is not None:
+        selected_scores = {
+            compiler: score
+            for compiler, score in compiler_scores.items()
+            if compiler in allowed or (explicit_banner and compiler in {"GCC", "Clang"})
+        }
+        if not selected_scores:
+            return "Unknown"
+
+    max_score = max(selected_scores.values())
     top_compilers = [
-        compiler for compiler, score in compiler_scores.items() if score == max_score and score > 0
+        compiler for compiler, score in selected_scores.items() if score == max_score and score > 0
     ]
 
-    if not _is_c_family_language(source_language) and not _has_explicit_compiler_banner(elf):
+    if not _is_c_family_language(source_language) and allowed is None and not explicit_banner:
         return "Unknown"
 
     if max_score < 3:
