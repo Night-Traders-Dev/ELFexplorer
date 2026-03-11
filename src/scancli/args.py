@@ -77,4 +77,86 @@ def build_parser():
         action="store_true",
         help="For multiple reports, render each report instead of only a collection summary.",
     )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Show explainability details (top evidence and competitors) in plain reports.",
+    )
+    parser.add_argument(
+        "--signature-pack",
+        action="append",
+        default=[],
+        help="Path to a JSON signature/rule pack to apply for this run. Can be repeated.",
+    )
+    parser.add_argument(
+        "--signatures-dir",
+        default=None,
+        help="Directory for managed signature packs (default: ~/.elfexplorer/signatures).",
+    )
+    parser.add_argument(
+        "--install-signature-pack",
+        default=None,
+        help="Install a local signature pack JSON into managed signatures and set as active.",
+    )
+    parser.add_argument(
+        "--update-signatures",
+        default=None,
+        help="Fetch a signature pack JSON from URL and set as active.",
+    )
+    parser.add_argument(
+        "--list-signature-packs",
+        action="store_true",
+        help="List managed signature pack JSON files.",
+    )
+    parser.add_argument(
+        "--benchmark-manifest",
+        default=None,
+        help="Run benchmark from JSON manifest ({cases:[...]}) and exit.",
+    )
+    parser.add_argument(
+        "--benchmark-corpus",
+        default=None,
+        help="Run benchmark by auto-discovering expected labels from corpus filenames and exit.",
+    )
+    parser.add_argument(
+        "--benchmark-out",
+        default=None,
+        help="Optional path to save benchmark results JSON.",
+    )
+    parser.add_argument(
+        "--diff",
+        default=None,
+        help="Compare the primary report against another binary path and print a diff report.",
+    )
+    parser.add_argument(
+        "--export-diff-md",
+        default=None,
+        help="Optional path to export binary diff as Markdown (requires --diff).",
+    )
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Enable CI policy evaluation. Non-compliant reports exit with non-zero code.",
+    )
+    parser.add_argument(
+        "--policy-file",
+        default=None,
+        help="JSON CI policy file path (used with --ci).",
+    )
+    parser.add_argument(
+        "--re-import",
+        default=None,
+        help="Import reverse-engineering annotations JSON and attach to scan result.",
+    )
+    parser.add_argument(
+        "--re-export",
+        default=None,
+        help="Export RE annotations JSON after scan.",
+    )
+    parser.add_argument(
+        "--re-export-format",
+        choices=["generic", "ghidra", "ida", "rizin"],
+        default="generic",
+        help="Format for RE annotation export (used with --re-export).",
+    )
     return parser

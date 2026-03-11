@@ -21,7 +21,29 @@ def print_score_table(title, scores):
         print(f"  {label}: {score}")
 
 
-def print_plain_report(report):
+def _print_explanation_block(explanations):
+    if not explanations:
+        print("No explainability data available.")
+        return
+    for key in ("language", "compiler", "build_system", "artifact"):
+        data = explanations.get(key, {})
+        print(f"{key}:")
+        print(f"  predicted: {data.get('predicted', 'Unknown')}")
+        print(f"  confidence note: {data.get('confidence_note', 'n/a')}")
+        print(f"  score margin: {data.get('score_margin', 0)}")
+        positives = data.get("top_positive", [])
+        competitors = data.get("top_competitors", [])
+        if positives:
+            print("  top positive:")
+            for item in positives[:5]:
+                print(f"    - {item.get('label')}: {item.get('score')}")
+        if competitors:
+            print("  top competitors:")
+            for item in competitors[:5]:
+                print(f"    - {item.get('label')}: {item.get('score')}")
+
+
+def print_plain_report(report, show_explain=False):
     scan_result = report["scan_result"]
     artifact_profile = scan_result["artifact_profile"]
 
@@ -72,6 +94,77 @@ def print_plain_report(report):
 
     print(rule("Binary Metadata", FG_CYAN))
     print(report.get("metadata_text", "").rstrip())
+    if show_explain:
+        print()
+        print(rule("Explainability", FG_YELLOW))
+        _print_explanation_block(scan_result.get("explanations", {}))
+
+        print()
+        print(rule("Hardening / Packing Signals", FG_YELLOW))
+        hardening = scan_result.get("hardening_profile", {})
+        if not hardening:
+            print("No hardening profile available.")
+        else:
+            print(f"Risk Level: {hardening.get('risk_level', 'unknown')}")
+            print(f"Stripped: {hardening.get('stripped', False)}")
+            print(f"Likely Packed: {hardening.get('likely_packed', False)}")
+            print(f"Likely Obfuscated: {hardening.get('likely_obfuscated', False)}")
+            print(f".text Entropy: {hardening.get('text_entropy', 0.0)}")
+            for item in hardening.get("signals", []):
+                print(f"  - {item}")
+
+        print()
+        print(rule("Mixed Attribution", FG_YELLOW))
+        mixed = scan_result.get("mixed_attribution", {})
+        print(
+            "Dominant symbol language: "
+            f"{mixed.get('symbol_dominant_language', 'Unknown')} "
+            f"(score={mixed.get('symbol_dominant_score', 0)})"
+        )
+        section_hints = mixed.get("section_hints", [])
+        if section_hints:
+            print("Section hints:")
+            for hint in section_hints[:12]:
+                print(
+                    f"  - {hint.get('section')}: "
+                    f"lang={hint.get('language_hint')}({hint.get('language_score')}) "
+                    f"compiler={hint.get('compiler_hint')}({hint.get('compiler_score')})"
+                )
+        else:
+            print("No section-level mixed-attribution hints.")
+
+        print()
+        print(rule("Firmware Fingerprint", FG_YELLOW))
+        fw = scan_result.get("firmware_fingerprint", {})
+        if fw:
+            print(f"Firmware Candidate: {fw.get('is_firmware_candidate', False)}")
+            print(f"Firmware Confidence: {fw.get('firmware_confidence', 0)}")
+            print(f"Likely MCU: {fw.get('likely_mcu', 'Unknown')}")
+            print(f"Likely Vendor: {fw.get('likely_vendor', 'Unknown')}")
+            print(f"SDK Candidates: {', '.join(fw.get('sdk_candidates', [])) or 'None'}")
+            print(f"RTOS Candidates: {', '.join(fw.get('rtos_candidates', [])) or 'None'}")
+            for item in fw.get("signals", []):
+                print(f"  - {item}")
+        else:
+            print("No firmware fingerprint data available.")
+
+        plugin_evidence = scan_result.get("plugin_evidence")
+        if plugin_evidence:
+            print()
+            print(rule("Plugin / Signature Evidence", FG_YELLOW))
+            pack_names = plugin_evidence.get("pack_names", [])
+            if pack_names:
+                print(f"Active packs: {', '.join(pack_names)}")
+            for category in ("languages", "compilers", "build_systems", "artifacts"):
+                hits = plugin_evidence.get(category, [])
+                if not hits:
+                    continue
+                print(f"{category}:")
+                for hit in hits:
+                    print(
+                        f"  - {hit.get('rule')}: target={hit.get('target')} "
+                        f"delta={hit.get('score_delta', 0)} sections={hit.get('sections')}"
+                    )
     print()
     print(styled("Completed binary scan.", STYLE_DIM, FG_CYAN))
 
@@ -102,10 +195,10 @@ def run_textual_workspace(callbacks, explicit_ui=False):
         return False
 
 
-def display_report(report, ui_mode="textual", explicit_ui=False):
+def display_report(report, ui_mode="textual", explicit_ui=False, show_explain=False):
     if ui_mode == "textual" and run_textual_report(report, explicit_ui=explicit_ui):
         return
-    print_plain_report(report)
+    print_plain_report(report, show_explain=show_explain)
 
 
 def print_collection_summary(reports):

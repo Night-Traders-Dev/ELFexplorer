@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from advanced.plugins import load_rule_pack, merge_rule_packs
+from advanced.reinterop import load_re_annotations
+from advanced.signatures import load_active_signature_pack
 from reporting.export import (
     export_collection_markdown,
     export_collection_pdf,
@@ -19,7 +22,29 @@ from .render import display_report, run_textual_workspace
 from .scan import build_scan_report, is_supported_binary, report_timestamp
 
 
-def crawl_directory(directory, mode="general", recursive=True, max_files=None):
+def build_scan_options(args):
+    packs = []
+    if getattr(args, "signature_pack", None):
+        for path in args.signature_pack:
+            packs.append(load_rule_pack(path))
+
+    active_pack = load_active_signature_pack(getattr(args, "signatures_dir", None))
+    if active_pack:
+        packs.append(active_pack)
+
+    merged_pack = merge_rule_packs(packs) if packs else None
+
+    re_annotations = None
+    if getattr(args, "re_import", None):
+        re_annotations = load_re_annotations(args.re_import)
+
+    return {
+        "plugin_rules": merged_pack,
+        "re_annotations": re_annotations,
+    }
+
+
+def crawl_directory(directory, mode="general", recursive=True, max_files=None, options=None):
     root = Path(directory).expanduser()
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError(f"Directory not found: {root}")
@@ -31,7 +56,7 @@ def crawl_directory(directory, mode="general", recursive=True, max_files=None):
             continue
         if not is_supported_binary(path):
             continue
-        reports.append(build_scan_report(str(path), mode=mode))
+        reports.append(build_scan_report(str(path), mode=mode, options=options))
         if max_files is not None and len(reports) >= max_files:
             break
     return reports
@@ -82,8 +107,10 @@ def save_and_export_collection(reports, args):
         print(f"Exported PDF collection: {pdf_path}")
 
 
-def collect_reports_from_args(args):
+def collect_reports_from_args(args, scan_options=None):
     reports = []
+    if scan_options is None:
+        scan_options = build_scan_options(args)
 
     if args.load_scan:
         reports.append(load_report(args.load_scan))
@@ -93,7 +120,7 @@ def collect_reports_from_args(args):
         reports.extend(payload.get("reports", []))
 
     if args.filepath:
-        reports.append(build_scan_report(args.filepath, mode=args.mode))
+        reports.append(build_scan_report(args.filepath, mode=args.mode, options=scan_options))
 
     if args.crawl:
         reports.extend(
@@ -102,18 +129,24 @@ def collect_reports_from_args(args):
                 mode=args.mode,
                 recursive=(not args.no_recursive),
                 max_files=args.max_files,
+                options=scan_options,
             )
         )
 
     if args.task_file:
         task_reports = run_task_file(
             args.task_file,
-            scan_binary_func=lambda path, mode=args.mode: build_scan_report(path, mode=mode),
+            scan_binary_func=lambda path, mode=args.mode: build_scan_report(
+                path,
+                mode=mode,
+                options=scan_options,
+            ),
             crawl_directory_func=lambda path, mode=args.mode, recursive=True, max_files=None: crawl_directory(
                 path,
                 mode=mode,
                 recursive=recursive,
                 max_files=max_files,
+                options=scan_options,
             ),
             default_mode=args.mode,
         )
@@ -122,14 +155,16 @@ def collect_reports_from_args(args):
     return reports
 
 
-def workspace_callbacks(ui_mode, explicit_ui, store_dir):
+def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
+    scan_options = scan_options or {}
     return {
-        "scan": lambda path, mode="general": build_scan_report(path, mode=mode),
+        "scan": lambda path, mode="general": build_scan_report(path, mode=mode, options=scan_options),
         "crawl": lambda path, mode="general", recursive=True, max_files=None: crawl_directory(
             path,
             mode=mode,
             recursive=recursive,
             max_files=max_files,
+            options=scan_options,
         ),
         "load_scan": load_report,
         "load_collection": load_collection,
@@ -148,7 +183,12 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir):
 
 def handle_no_input(args, explicit_ui):
     if args.ui == "textual":
-        callbacks = workspace_callbacks(args.ui, explicit_ui, args.store_dir)
+        callbacks = workspace_callbacks(
+            args.ui,
+            explicit_ui,
+            args.store_dir,
+            scan_options=build_scan_options(args),
+        )
         if run_textual_workspace(callbacks, explicit_ui=explicit_ui):
             return 0
 

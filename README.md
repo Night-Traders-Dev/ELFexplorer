@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.6.1-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,36 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.7.0
+
+- Added benchmark suite support:
+  - manifest-driven benchmark mode (`--benchmark-manifest`)
+  - corpus auto-discovery benchmark mode (`--benchmark-corpus`)
+  - accuracy/confusion/per-label precision-recall output with optional JSON export (`--benchmark-out`)
+- Added explainability mode (`--explain`) with:
+  - top positive class evidence
+  - top competitor evidence
+  - score-margin confidence notes
+- Added plugin/signature rule system for score overrides:
+  - runtime rule packs (`--signature-pack`)
+  - managed signature channel (`--install-signature-pack`, `--update-signatures`, `--list-signature-packs`)
+- Added mixed-binary attribution:
+  - section-level language/compiler hints
+  - symbol-pattern dominant-language hints
+- Added firmware fingerprinting profile:
+  - likely MCU/vendor/SDK/RTOS candidates with confidence + signals
+- Added stripped/packed/obfuscated risk profiling:
+  - entropy and marker-based hardening/packing indicators
+- Added cross-binary diff mode:
+  - compare two scans (`--diff`) with score deltas and indicator changes
+  - optional Markdown diff export (`--export-diff-md`)
+- Added CI policy mode:
+  - policy file support (`--policy-file`)
+  - compliance gate (`--ci`) with non-zero exit on violations
+- Added reverse-engineering interop:
+  - import RE annotations (`--re-import`)
+  - export RE payloads (`--re-export`, `--re-export-format`)
 
 ## What Changed in 0.6.1
 
@@ -122,6 +152,7 @@ Current false-positive guardrails include:
 - `src/detect/`: language/compiler/build-system/artifact detection orchestration + heuristics
 - `src/detect/techniques/`: evidence-specific heuristic modules
 - `src/detect/arch/`: architecture-shape heuristics
+- `src/advanced/`: benchmark, explainability, plugin/signature, mixed attribution, firmware fingerprinting, hardening, diff, CI, and RE interop
 - `src/info/elfinfo.py`: metadata printers (`general`, `important`, `detailed`)
 - `src/symbols/elfsymbols.py`: symbol-driven heuristic scoring
 - `src/uf2/`: UF2 parsing and UF2-backed firmware scanning
@@ -187,6 +218,22 @@ Core options:
 - `--export-collection-md <path>`
 - `--export-collection-pdf <path>`
 - `--show-each`
+- `--explain`
+- `--diff <other_binary>`
+- `--export-diff-md <path>`
+- `--ci`
+- `--policy-file <policy.json>`
+- `--benchmark-manifest <manifest.json>`
+- `--benchmark-corpus <dir>`
+- `--benchmark-out <path.json>`
+- `--signature-pack <pack.json>` (repeatable)
+- `--install-signature-pack <pack.json>`
+- `--update-signatures <url>`
+- `--list-signature-packs`
+- `--signatures-dir <dir>`
+- `--re-import <annotations.json>`
+- `--re-export <path.json>`
+- `--re-export-format generic|ghidra|ida|rizin`
 - `--version`
 
 Examples:
@@ -203,6 +250,15 @@ python3 src/elfscan.py --crawl test-bin --max-files 20 --save-collection
 python3 src/elfscan.py --task-file tasks.json --export-collection-md reports/batch.md
 python3 src/elfscan.py --load-scan ~/.elfexplorer/scans/hello_rust-20260311T020000Z.json
 python3 src/elfscan.py --load-collection ~/.elfexplorer/scans/collection-20260311T020500Z.json --show-each
+python3 src/elfscan.py --benchmark-corpus test-bin --benchmark-out reports/bench.json
+python3 src/elfscan.py --benchmark-manifest benchmarks/cases.json
+python3 src/elfscan.py test-bin/x86_64/hello_c --diff test-bin/x86_64/hello_cpp --export-diff-md reports/c_vs_cpp.md
+python3 src/elfscan.py test-bin/x86_64/hello_go --ci --policy-file ci-policy.json
+python3 src/elfscan.py test-bin/x86_64/hello_c --signature-pack rules/custom-pack.json --explain
+python3 src/elfscan.py --install-signature-pack rules/custom-pack.json --signatures-dir ~/.elfexplorer/signatures
+python3 src/elfscan.py --update-signatures https://example.com/elfexplorer-signatures.json
+python3 src/elfscan.py --list-signature-packs
+python3 src/elfscan.py test-bin/x86_64/hello_c --re-import re-notes.json --re-export reports/re-export.json --re-export-format ghidra
 ```
 
 ## Textual Workspace (Default UX)

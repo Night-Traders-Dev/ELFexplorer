@@ -208,6 +208,106 @@ def run_textual_report(report: Dict):
             self._fill_table("compiler_scores", "Compiler", scan["compiler_scores"])
             self._fill_table("build_scores", "Build System", scan["build_scores"])
 
+            evidence_lines = []
+            for line in indicators:
+                evidence_lines.append(f"- {line}")
+
+            hardening = scan.get("hardening_profile", {})
+            if hardening:
+                evidence_lines.extend(
+                    [
+                        "",
+                        "Hardening Profile:",
+                        f"- risk_level: {hardening.get('risk_level', 'unknown')}",
+                        f"- stripped: {hardening.get('stripped', False)}",
+                        f"- likely_packed: {hardening.get('likely_packed', False)}",
+                        f"- likely_obfuscated: {hardening.get('likely_obfuscated', False)}",
+                        f"- text_entropy: {hardening.get('text_entropy', 0.0)}",
+                    ]
+                )
+                for signal in hardening.get("signals", []):
+                    evidence_lines.append(f"  - signal: {signal}")
+
+            mixed = scan.get("mixed_attribution", {})
+            if mixed:
+                evidence_lines.extend(
+                    [
+                        "",
+                        "Mixed Attribution:",
+                        f"- dominant_symbol_language: {mixed.get('symbol_dominant_language', 'Unknown')}",
+                        f"- dominant_symbol_score: {mixed.get('symbol_dominant_score', 0)}",
+                    ]
+                )
+                for hint in mixed.get("section_hints", [])[:10]:
+                    evidence_lines.append(
+                        "  - section="
+                        f"{hint.get('section')} "
+                        f"lang={hint.get('language_hint')}({hint.get('language_score')}) "
+                        f"compiler={hint.get('compiler_hint')}({hint.get('compiler_score')})"
+                    )
+
+            firmware = scan.get("firmware_fingerprint", {})
+            if firmware:
+                evidence_lines.extend(
+                    [
+                        "",
+                        "Firmware Fingerprint:",
+                        f"- is_firmware_candidate: {firmware.get('is_firmware_candidate', False)}",
+                        f"- firmware_confidence: {firmware.get('firmware_confidence', 0)}",
+                        f"- likely_mcu: {firmware.get('likely_mcu', 'Unknown')}",
+                        f"- likely_vendor: {firmware.get('likely_vendor', 'Unknown')}",
+                        f"- sdk_candidates: {', '.join(firmware.get('sdk_candidates', [])) or 'None'}",
+                        f"- rtos_candidates: {', '.join(firmware.get('rtos_candidates', [])) or 'None'}",
+                    ]
+                )
+                for signal in firmware.get("signals", []):
+                    evidence_lines.append(f"  - signal: {signal}")
+
+            explanations = scan.get("explanations", {})
+            if explanations:
+                evidence_lines.append("")
+                evidence_lines.append("Explainability:")
+                for key in ("language", "compiler", "build_system", "artifact"):
+                    data = explanations.get(key, {})
+                    evidence_lines.append(
+                        f"- {key}: predicted={data.get('predicted', 'Unknown')} "
+                        f"margin={data.get('score_margin', 0)} "
+                        f"note={data.get('confidence_note', 'n/a')}"
+                    )
+
+            plugin_evidence = scan.get("plugin_evidence", {})
+            if plugin_evidence:
+                evidence_lines.append("")
+                evidence_lines.append("Plugin/Signature Evidence:")
+                pack_names = plugin_evidence.get("pack_names", [])
+                if pack_names:
+                    evidence_lines.append(f"- active_packs: {', '.join(pack_names)}")
+                for category in ("languages", "compilers", "build_systems", "artifacts"):
+                    hits = plugin_evidence.get(category, [])
+                    for hit in hits:
+                        evidence_lines.append(
+                            f"  - {category}: rule={hit.get('rule')} target={hit.get('target')} "
+                            f"delta={hit.get('score_delta')}"
+                        )
+
+            re_import = scan.get("re_annotations_imported")
+            if re_import:
+                evidence_lines.extend(
+                    [
+                        "",
+                        "Imported RE annotations:",
+                        f"- source: {re_import.get('source', 'unknown')}",
+                        f"- functions: {len(re_import.get('functions', []))}",
+                        f"- comments: {len(re_import.get('comments', []))}",
+                        f"- labels: {len(re_import.get('labels', []))}",
+                        f"- xrefs: {len(re_import.get('xrefs', []))}",
+                    ]
+                )
+
+            evidence.update(
+                "\n".join(evidence_lines) if evidence_lines else "No explicit evidence captured."
+            )
+
         def _rescan(self, mode: str | None = None):
             file_path = self.report.get("file")
             if not file_path:

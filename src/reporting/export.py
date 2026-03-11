@@ -7,6 +7,115 @@ def _top_scores(scores, limit=8):
     return ordered[:limit]
 
 
+def _append_explainability(lines, scan):
+    explanations = scan.get("explanations", {})
+    lines.extend(["", "## Explainability", ""])
+    if not explanations:
+        lines.append("_No explainability details available._")
+        return
+    for key in ("language", "compiler", "build_system", "artifact"):
+        data = explanations.get(key, {})
+        lines.append(f"### {key}")
+        lines.append("")
+        lines.append(f"- Predicted: `{data.get('predicted', 'Unknown')}`")
+        lines.append(f"- Confidence Note: {data.get('confidence_note', 'n/a')}")
+        lines.append(f"- Score Margin: `{data.get('score_margin', 0)}`")
+        positives = data.get("top_positive", [])
+        competitors = data.get("top_competitors", [])
+        lines.append("- Top Positive:")
+        if positives:
+            for item in positives[:5]:
+                lines.append(f"  - {item.get('label')}: {item.get('score')}")
+        else:
+            lines.append("  - none")
+        lines.append("- Top Competitors:")
+        if competitors:
+            for item in competitors[:5]:
+                lines.append(f"  - {item.get('label')}: {item.get('score')}")
+        else:
+            lines.append("  - none")
+        lines.append("")
+
+
+def _append_advanced_profiles(lines, scan):
+    hardening = scan.get("hardening_profile", {})
+    mixed = scan.get("mixed_attribution", {})
+    firmware = scan.get("firmware_fingerprint", {})
+    plugin_evidence = scan.get("plugin_evidence", {})
+    re_import = scan.get("re_annotations_imported")
+
+    lines.extend(["## Hardening / Packing Profile", ""])
+    if hardening:
+        lines.append(f"- Risk Level: `{hardening.get('risk_level', 'unknown')}`")
+        lines.append(f"- Stripped: `{hardening.get('stripped', False)}`")
+        lines.append(f"- Likely Packed: `{hardening.get('likely_packed', False)}`")
+        lines.append(f"- Likely Obfuscated: `{hardening.get('likely_obfuscated', False)}`")
+        lines.append(f"- .text Entropy: `{hardening.get('text_entropy', 0.0)}`")
+        if hardening.get("signals"):
+            lines.append("- Signals:")
+            for item in hardening.get("signals", []):
+                lines.append(f"  - {item}")
+    else:
+        lines.append("_No hardening profile available._")
+
+    lines.extend(["", "## Mixed Attribution", ""])
+    if mixed:
+        lines.append(
+            f"- Dominant Symbol Language: `{mixed.get('symbol_dominant_language', 'Unknown')}` "
+            f"(score `{mixed.get('symbol_dominant_score', 0)}`)"
+        )
+        section_hints = mixed.get("section_hints", [])
+        if section_hints:
+            lines.append("- Section Hints:")
+            for hint in section_hints[:12]:
+                lines.append(
+                    f"  - `{hint.get('section')}`: "
+                    f"lang={hint.get('language_hint')}({hint.get('language_score')}) "
+                    f"compiler={hint.get('compiler_hint')}({hint.get('compiler_score')})"
+                )
+    else:
+        lines.append("_No mixed attribution data available._")
+
+    lines.extend(["", "## Firmware Fingerprint", ""])
+    if firmware:
+        lines.append(f"- Firmware Candidate: `{firmware.get('is_firmware_candidate', False)}`")
+        lines.append(f"- Firmware Confidence: `{firmware.get('firmware_confidence', 0)}`")
+        lines.append(f"- Likely MCU: `{firmware.get('likely_mcu', 'Unknown')}`")
+        lines.append(f"- Likely Vendor: `{firmware.get('likely_vendor', 'Unknown')}`")
+        lines.append(f"- SDK Candidates: {', '.join(firmware.get('sdk_candidates', [])) or 'None'}")
+        lines.append(f"- RTOS Candidates: {', '.join(firmware.get('rtos_candidates', [])) or 'None'}")
+        if firmware.get("signals"):
+            lines.append("- Signals:")
+            for signal in firmware.get("signals", []):
+                lines.append(f"  - {signal}")
+    else:
+        lines.append("_No firmware fingerprint available._")
+
+    if plugin_evidence:
+        lines.extend(["", "## Plugin / Signature Evidence", ""])
+        pack_names = plugin_evidence.get("pack_names", [])
+        if pack_names:
+            lines.append(f"- Active Packs: {', '.join(pack_names)}")
+        for category in ("languages", "compilers", "build_systems", "artifacts"):
+            hits = plugin_evidence.get(category, [])
+            if not hits:
+                continue
+            lines.append(f"- {category}:")
+            for hit in hits:
+                lines.append(
+                    f"  - `{hit.get('rule')}` target={hit.get('target')} "
+                    f"delta={hit.get('score_delta')} sections={hit.get('sections')}"
+                )
+
+    if re_import:
+        lines.extend(["", "## Imported RE Annotations", ""])
+        lines.append(f"- Source: `{re_import.get('source', 'unknown')}`")
+        lines.append(f"- Functions: `{len(re_import.get('functions', []))}`")
+        lines.append(f"- Comments: `{len(re_import.get('comments', []))}`")
+        lines.append(f"- Labels: `{len(re_import.get('labels', []))}`")
+        lines.append(f"- Xrefs: `{len(re_import.get('xrefs', []))}`")
+
+
 def report_to_markdown(report):
     scan = report.get("scan_result", {})
     artifact = scan.get("artifact_profile", {})
@@ -94,6 +203,10 @@ def report_to_markdown(report):
         lines.extend(["```text", metadata_text, "```"])
     else:
         lines.append("_No metadata captured._")
+
+    _append_explainability(lines, scan)
+    lines.append("")
+    _append_advanced_profiles(lines, scan)
 
     lines.append("")
     return "\n".join(lines)

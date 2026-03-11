@@ -105,6 +105,16 @@ Outputs are available as:
   - build-system scoring orchestration and final selection
 - `src/detect/artifact.py`
   - artifact profile orchestration (confidence + hints)
+- `src/advanced/`
+  - benchmark runner (accuracy, confusion matrix, precision/recall)
+  - score explainability generation (top positives/competitors + confidence notes)
+  - plugin/signature rule application
+  - mixed-binary attribution (section + symbol hints)
+  - firmware fingerprinting layer
+  - stripped/packed/obfuscated hardening profile
+  - cross-binary diff model/rendering
+  - CI policy evaluation
+  - reverse-engineering import/export interop
 - `src/detect/techniques/`
   - technique modules grouped by evidence type
 - `src/detect/techniques/artifact.py`
@@ -279,6 +289,8 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - directory crawl: `--crawl`
 - task-file batch: `--task-file`
 - load existing report(s): `--load-scan`, `--load-collection`
+- benchmark mode: `--benchmark-manifest` or `--benchmark-corpus`
+- binary diff mode: `--diff`
 
 ### 10.4 Persistence and export
 
@@ -286,6 +298,8 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - save collection JSON: `--save-collection [path]`
 - export report: `--export-md`, `--export-pdf`
 - export collection: `--export-collection-md`, `--export-collection-pdf`
+- export diff markdown: `--export-diff-md`
+- export RE payload: `--re-export` (`--re-export-format` supports `generic`, `ghidra`, `ida`, `rizin`)
 
 ### 10.5 Textual Report Palette
 
@@ -311,6 +325,20 @@ Current persisted preference:
 Behavior:
 - on Textual app startup (workspace/report), saved theme is loaded and applied if available
 - on theme change, new value is written back to `settings.conf`
+
+### 10.7 Advanced Analysis Flags
+
+- explainability: `--explain`
+- CI policy gate: `--ci` with optional `--policy-file`
+- RE import: `--re-import`
+- runtime custom signature packs: `--signature-pack <pack.json>` (repeatable)
+
+### 10.8 Signature Update Channel
+
+- install local pack and activate: `--install-signature-pack <pack.json>`
+- update active pack from URL: `--update-signatures <url>`
+- list installed packs: `--list-signature-packs`
+- set managed pack directory: `--signatures-dir <dir>`
 
 ## 11. Textual Workspace Command Surface
 
@@ -408,6 +436,11 @@ Sections:
 - `Heuristic Scoring`
 - `Detection Summary`
 - `ELF Metadata`
+- optional `Explainability` (with `--explain`)
+- optional `Hardening / Packing Signals` (with `--explain`)
+- optional `Mixed Attribution` (with `--explain`)
+- optional `Firmware Fingerprint` (with `--explain`)
+- optional `Plugin / Signature Evidence` (when rules are active)
 
 Summary lines are intentionally stable for parser tooling:
 - `Detected Source Language (heuristic): ...`
@@ -423,6 +456,12 @@ Includes:
 - top score tables (language/compiler/build/artifact)
 - artifact evidence bullets
 - metadata code block
+- explainability blocks (language/compiler/build/artifact)
+- hardening profile
+- mixed attribution profile
+- firmware fingerprint profile
+- plugin/signature evidence (if active)
+- imported RE annotation summary (if provided)
 
 Collection Markdown includes global index + per-report sections.
 
