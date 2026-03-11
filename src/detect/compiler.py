@@ -1,5 +1,6 @@
 from detect.constants import COMPILER_HEURISTICS
 from detect.techniques.compiler import (
+    score_compiler_artifact_context,
     score_compiler_dwarf_producer,
     score_compiler_dynamic_libs,
     score_compiler_sections,
@@ -50,7 +51,13 @@ def _allowed_compilers_for_language(source_language):
     return language_compiler_map.get(source_language)
 
 
-def detect_compiler(elf, source_language=None):
+def detect_compiler(
+    elf,
+    source_language=None,
+    artifact_profile=None,
+    emit_report=True,
+    return_details=False,
+):
     compiler_scores = empty_scores(COMPILER_HEURISTICS)
 
     score_compiler_sections(elf, compiler_scores)
@@ -58,10 +65,12 @@ def detect_compiler(elf, source_language=None):
     score_compiler_dwarf_producer(elf, compiler_scores)
     score_compiler_symbols(elf, compiler_scores)
     score_compiler_dynamic_libs(elf, compiler_scores)
+    score_compiler_artifact_context(artifact_profile, compiler_scores)
 
-    print("Compiler detection scores:")
-    for compiler, score in compiler_scores.items():
-        print(f"  {compiler}: {score}")
+    if emit_report:
+        print("Compiler detection scores:")
+        for compiler, score in compiler_scores.items():
+            print(f"  {compiler}: {score}")
 
     explicit_banner = _has_explicit_compiler_banner(elf)
     allowed = _allowed_compilers_for_language(source_language)
@@ -74,6 +83,8 @@ def detect_compiler(elf, source_language=None):
             if compiler in allowed or (explicit_banner and compiler in {"GCC", "Clang"})
         }
         if not selected_scores:
+            if return_details:
+                return "Unknown", compiler_scores
             return "Unknown"
 
     max_score = max(selected_scores.values())
@@ -82,12 +93,16 @@ def detect_compiler(elf, source_language=None):
     ]
 
     if not _is_c_family_language(source_language) and allowed is None and not explicit_banner:
-        return "Unknown"
+        result = "Unknown"
+    elif max_score < 3:
+        result = "Unknown"
+    elif len(top_compilers) == 1:
+        result = top_compilers[0]
+    elif len(top_compilers) > 1:
+        result = "Ambiguous: " + "/".join(top_compilers)
+    else:
+        result = "Unknown"
 
-    if max_score < 3:
-        return "Unknown"
-    if len(top_compilers) == 1:
-        return top_compilers[0]
-    if len(top_compilers) > 1:
-        return "Ambiguous: " + "/".join(top_compilers)
-    return "Unknown"
+    if return_details:
+        return result, compiler_scores
+    return result

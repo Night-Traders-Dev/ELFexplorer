@@ -6,7 +6,12 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from detect.elfdetect import detect_build_system, detect_compiler, detect_source_language
+from detect.elfdetect import (
+    detect_artifact_profile,
+    detect_build_system,
+    detect_compiler,
+    detect_source_language,
+)
 
 
 class FakeSymbol:
@@ -45,18 +50,57 @@ class FakeTag:
         self.needed = needed
 
 
+class FakeSegmentHeader:
+    def __init__(self, p_type, p_vaddr=0, p_paddr=0, p_offset=0, p_filesz=0, p_memsz=0, p_flags=0):
+        self.p_type = p_type
+        self.p_vaddr = p_vaddr
+        self.p_paddr = p_paddr
+        self.p_offset = p_offset
+        self.p_filesz = p_filesz
+        self.p_memsz = p_memsz
+        self.p_flags = p_flags
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+
+class FakeSegment:
+    def __init__(self, p_type, data=b"", p_vaddr=0, p_paddr=0, p_offset=0, p_filesz=None, p_memsz=None, p_flags=0):
+        if p_filesz is None:
+            p_filesz = len(data)
+        if p_memsz is None:
+            p_memsz = len(data)
+        self._data = data
+        self.header = FakeSegmentHeader(
+            p_type=p_type,
+            p_vaddr=p_vaddr,
+            p_paddr=p_paddr,
+            p_offset=p_offset,
+            p_filesz=p_filesz,
+            p_memsz=p_memsz,
+            p_flags=p_flags,
+        )
+
+    def data(self):
+        return self._data
+
+
 class FakeELF:
-    def __init__(self, sections, dwarf_info=None, machine="EM_X86_64"):
+    def __init__(self, sections, dwarf_info=None, machine="EM_X86_64", etype="ET_EXEC", entry=0, segments=None):
         self._sections = list(sections)
         self._by_name = {section.name: section for section in self._sections}
         self._dwarf_info = dwarf_info
-        self.header = {"e_machine": machine}
+        self._segments = list(segments or [])
+        self.header = {"e_machine": machine, "e_type": etype, "e_entry": entry}
 
     def get_section_by_name(self, name):
         return self._by_name.get(name)
 
     def iter_sections(self):
         return iter(self._sections)
+
+    def iter_segments(self):
+        return iter(self._segments)
 
     def has_dwarf_info(self):
         return self._dwarf_info is not None
@@ -106,6 +150,11 @@ class HeuristicDetectionTests(unittest.TestCase):
     def detect_build_system_name(elf):
         with io.StringIO() as capture, mock.patch("sys.stdout", capture):
             return detect_build_system(elf)
+
+    @staticmethod
+    def detect_artifact(elf):
+        with io.StringIO() as capture, mock.patch("sys.stdout", capture):
+            return detect_artifact_profile(elf, emit_report=False)
 
     def test_detects_asm_from_minimal_startup_shape(self):
         elf = FakeELF(
@@ -330,6 +379,55 @@ class HeuristicDetectionTests(unittest.TestCase):
             machine="EM_X86_64",
         )
         self.assertEqual(self.detect_language(elf), "ASM")
+
+    def test_detects_artifact_bare_metal_rp2040_profile(self):
+        vector = (0x20001000).to_bytes(4, "little") + (0x10000101).to_bytes(4, "little")
+        code = vector + b"\x00" * 256
+        elf = FakeELF(
+            [
+                FakeSection(".boot2", data=b"\x00" * 256),
+                FakeSection(".binary_info", data=b"pico-sdk"),
+                FakeSection(".symtab", symbols=[FakeSymbol("_sbrk"), FakeSymbol("_write"), FakeSymbol("multicore_launch_core1")]),
+                FakeSection(".strtab", data=b"/home/dev/pico-sdk/src/rp2040/pico_platform"),
+            ],
+            machine="EM_ARM",
+            etype="ET_EXEC",
+            entry=0x10000101,
+            segments=[FakeSegment("PT_LOAD", data=code, p_vaddr=0x10000000, p_paddr=0x10000000)],
+        )
+        profile = self.detect_artifact(elf)
+        self.assertEqual(profile["artifact_type"], "Bare-metal Firmware")
+        self.assertIn("RP2040", profile["target"])
+        self.assertEqual(profile["sdk"], "Pico SDK")
+
+    def test_detects_artifact_linux_userspace_profile(self):
+        elf = FakeELF(
+            [
+                FakeSection(".interp", data=b"/lib64/ld-linux-x86-64.so.2\x00"),
+                FakeSection(".dynamic", tags=[FakeTag("libc.so.6")]),
+                FakeSection(".dynsym", symbols=[FakeSymbol("__libc_start_main")]),
+            ],
+            machine="EM_X86_64",
+            etype="ET_DYN",
+            entry=0x1060,
+            segments=[FakeSegment("PT_INTERP"), FakeSegment("PT_DYNAMIC")],
+        )
+        profile = self.detect_artifact(elf)
+        self.assertEqual(profile["artifact_type"], "Linux User-space Executable")
+        self.assertEqual(profile["linkage_model"], "Dynamic user-space")
+
+    def test_detects_artifact_linux_shared_library_profile(self):
+        elf = FakeELF(
+            [
+                FakeSection(".dynamic", tags=[FakeTag("libc.so.6"), FakeTag("libm.so.6")]),
+            ],
+            machine="EM_X86_64",
+            etype="ET_DYN",
+            entry=0,
+            segments=[FakeSegment("PT_DYNAMIC")],
+        )
+        profile = self.detect_artifact(elf)
+        self.assertEqual(profile["artifact_type"], "Linux Shared Library")
 
 
 if __name__ == "__main__":

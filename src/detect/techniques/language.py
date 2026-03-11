@@ -410,3 +410,25 @@ def score_section_names(elf, scores):
             scores["C#"] += 4
         if section_name in [".zig", ".zig_info"]:
             scores["Zig"] += 4
+
+
+def apply_artifact_language_bias(artifact_profile, scores):
+    if not artifact_profile:
+        return
+
+    artifact_type = artifact_profile.get("artifact_type", "")
+    signals = artifact_profile.get("signals", {})
+
+    if artifact_type == "Bare-metal Firmware":
+        scores["C"] += 3
+
+        if not signals.get("go_runtime_present"):
+            scores["Go"] = max(0, scores["Go"] - 6)
+        if not signals.get("dart_runtime_present"):
+            scores["Dart"] = max(0, scores["Dart"] - 4)
+        if not signals.get("dotnet_runtime_present"):
+            scores["C#"] = max(0, scores["C#"] - 6)
+
+        target_hints = set(artifact_profile.get("target_hints", []))
+        if any("cortex-m" in hint.lower() for hint in target_hints):
+            scores["ASM"] += 1

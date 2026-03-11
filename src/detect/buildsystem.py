@@ -1,5 +1,6 @@
 from detect.constants import BUILD_SYSTEM_HEURISTICS
 from detect.techniques.build_system import (
+    score_build_system_artifact_context,
     score_build_system_dynamic_libs,
     score_build_system_sections,
     score_build_system_strings,
@@ -8,17 +9,19 @@ from detect.techniques.build_system import (
 from detect.utils import empty_scores
 
 
-def detect_build_system(elf):
+def detect_build_system(elf, artifact_profile=None, emit_report=True, return_details=False):
     scores = empty_scores(BUILD_SYSTEM_HEURISTICS)
 
     score_build_system_strings(elf, scores)
     score_build_system_sections(elf, scores)
     score_build_system_symbols(elf, scores)
     score_build_system_dynamic_libs(elf, scores)
+    score_build_system_artifact_context(artifact_profile, scores)
 
-    print("Build system detection scores:")
-    for build_system, score in scores.items():
-        print(f"  {build_system}: {score}")
+    if emit_report:
+        print("Build system detection scores:")
+        for build_system, score in scores.items():
+            print(f"  {build_system}: {score}")
 
     max_score = max(scores.values())
     top_systems = [
@@ -26,9 +29,14 @@ def detect_build_system(elf):
     ]
 
     if max_score < 3:
-        return "Unknown"
-    if len(top_systems) == 1:
-        return top_systems[0]
-    if len(top_systems) > 1:
-        return "Ambiguous: " + "/".join(top_systems)
-    return "Unknown"
+        result = "Unknown"
+    elif len(top_systems) == 1:
+        result = top_systems[0]
+    elif len(top_systems) > 1:
+        result = "Ambiguous: " + "/".join(top_systems)
+    else:
+        result = "Unknown"
+
+    if return_details:
+        return result, scores
+    return result

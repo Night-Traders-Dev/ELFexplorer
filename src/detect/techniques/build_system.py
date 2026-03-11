@@ -69,3 +69,25 @@ def score_build_system_dynamic_libs(elf, scores):
             scores["Zig Build"] += 4
         if "libgradle" in needed:
             scores["Gradle"] += 4
+
+
+def score_build_system_artifact_context(artifact_profile, scores):
+    if not artifact_profile:
+        return
+
+    artifact_type = artifact_profile.get("artifact_type", "")
+    sdk_hints = set(artifact_profile.get("sdk_hints", []))
+    build_hints = set(artifact_profile.get("build_hints", []))
+    signals = artifact_profile.get("signals", {})
+
+    if artifact_type == "Bare-metal Firmware":
+        if "Pico SDK" in sdk_hints or "Pico SDK" in build_hints:
+            scores["Pico SDK"] += 8
+        if not signals.get("go_runtime_present"):
+            scores["Go Toolchain"] = max(0, scores["Go Toolchain"] - 4)
+        if "CMake" in build_hints:
+            scores["CMake"] += 3
+
+    if artifact_type.startswith("Linux"):
+        if signals.get("go_runtime_present"):
+            scores["Go Toolchain"] += 2

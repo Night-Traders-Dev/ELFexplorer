@@ -264,3 +264,23 @@ def score_compiler_dynamic_libs(elf, compiler_scores):
             compiler_scores["OCamlopt"] += 6
         if "libzig" in needed:
             compiler_scores["Zig"] += 4
+
+
+def score_compiler_artifact_context(artifact_profile, compiler_scores):
+    if not artifact_profile:
+        return
+
+    artifact_type = artifact_profile.get("artifact_type", "")
+    runtime_hints = set(artifact_profile.get("runtime_hints", []))
+    signals = artifact_profile.get("signals", {})
+
+    if artifact_type == "Bare-metal Firmware":
+        compiler_scores["GCC"] += 2
+        compiler_scores["Clang"] += 1
+        if not signals.get("go_runtime_present"):
+            compiler_scores["Go gc"] = max(0, compiler_scores["Go gc"] - 4)
+        if "newlib" in runtime_hints:
+            compiler_scores["GCC"] += 2
+
+    if artifact_type == "Linux User-space Executable" and "glibc" in runtime_hints:
+        compiler_scores["GCC"] += 1

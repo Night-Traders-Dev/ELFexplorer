@@ -1,6 +1,7 @@
 from detect.arch.asm import score_asm_patterns
 from detect.constants import SUPPORTED_LANGUAGES
 from detect.techniques.language import (
+    apply_artifact_language_bias,
     score_comment_section,
     score_debug_info,
     score_dynamic_section,
@@ -14,7 +15,7 @@ from detect.techniques.disassembly import score_disassembly_patterns
 from detect.utils import empty_scores
 
 
-def detect_source_language(elf):
+def detect_source_language(elf, artifact_profile=None, emit_report=True, return_details=False):
     """
     Attempt to deduce the original source language of an ELF binary using heuristics.
     Returns a string indicating the detected language.
@@ -31,6 +32,7 @@ def detect_source_language(elf):
     score_section_names(elf, scores)
     score_asm_patterns(elf, symtab, dynsym, scores)
     score_disassembly_patterns(elf, scores)
+    apply_artifact_language_bias(artifact_profile, scores)
 
     has_symbols = False
     if symtab and symtab.num_symbols() > 0:
@@ -38,9 +40,10 @@ def detect_source_language(elf):
     elif dynsym and dynsym.num_symbols() > 0:
         has_symbols = True
 
-    print("Language detection scores:")
-    for language, score in scores.items():
-        print(f"  {language}: {score}")
+    if emit_report:
+        print("Language detection scores:")
+        for language, score in scores.items():
+            print(f"  {language}: {score}")
 
     max_score = max(scores.values())
     top_languages = [
@@ -48,10 +51,16 @@ def detect_source_language(elf):
     ]
 
     if not has_symbols and max_score < 2:
-        print("Warning: Binary appears stripped; detection may be unreliable.")
+        if emit_report:
+            print("Warning: Binary appears stripped; detection may be unreliable.")
 
     if len(top_languages) == 1:
-        return top_languages[0]
-    if len(top_languages) > 1:
-        return "Ambiguous: " + "/".join(top_languages)
-    return "Unknown"
+        result = top_languages[0]
+    elif len(top_languages) > 1:
+        result = "Ambiguous: " + "/".join(top_languages)
+    else:
+        result = "Unknown"
+
+    if return_details:
+        return result, scores
+    return result

@@ -7,6 +7,7 @@
 - heuristic language inference
 - heuristic compiler inference
 - heuristic host build-system inference
+- heuristic artifact profiling (firmware/userspace/shared/module/object)
 - corpus-based regression testing across architectures
 
 This project is intentionally heuristic-first. It does not claim perfect language attribution for every ELF. Instead, it provides defensible, inspectable evidence-based guesses.
@@ -14,12 +15,15 @@ This project is intentionally heuristic-first. It does not claim perfect languag
 ## 2. What the Tool Produces
 
 For each ELF input, the CLI provides:
+- artifact scoring table
 - language scoring table
 - compiler scoring table
 - build-system scoring table
+- artifact profile details (confidence, target, SDK, RTOS, runtime, linkage)
 - selected best language label
 - selected best compiler label
 - selected best build-system label
+- selected best artifact label
 - ELF metadata output in one of three modes
 
 Modes:
@@ -42,10 +46,14 @@ Modes:
   - compiler detector orchestration and final tie-breaking
 - `src/detect/buildsystem.py`
   - build-system detector orchestration and final tie-breaking
+- `src/detect/artifact.py`
+  - artifact-profile orchestration and confidence/summary selection
 - `src/detect/arch/`
   - architecture/binary-shape heuristics (ASM-focused currently)
 - `src/detect/techniques/`
   - grouped heuristic implementations by evidence type
+- `src/detect/techniques/artifact.py`
+  - firmware/userspace/module/object profiling heuristics
 - `src/detect/constants.py` and `src/detect/utils.py`
   - shared marker catalogs and reusable readers/helpers
 - `src/symbols/elfsymbols.py`
@@ -53,6 +61,8 @@ Modes:
   - cross-language symbol markers and pattern checks
 - `src/info/elfinfo.py`
   - metadata renderers for ELF header/program headers/sections
+- `src/ui/textual_report.py`
+  - optional Textual-based paneled report UX (`--ui textual`)
 - `tests/test_elfscan_cli.py`
   - integration tests that run the CLI over `test-bin/*`
   - pass/fail status lines with color and verbosity levels
@@ -68,6 +78,7 @@ High-level flow:
 1. Open ELF with `pyelftools`.
 2. Initialize per-language score dictionary.
 3. Score by evidence type:
+   - program header shape (`PT_INTERP`, `PT_DYNAMIC`, `PT_LOAD`, `ET_*`)
    - `.comment` compiler/build strings
    - note sections
    - dynamic dependencies (`DT_NEEDED`)
@@ -77,10 +88,12 @@ High-level flow:
    - section-name patterns
    - binary-shape heuristics (ASM)
    - disassembly-inspired opcode pattern scans in `.text`
-4. Print score tables.
-5. Pick label with highest score.
-6. Resolve ties as `Ambiguous: ...`.
-7. If no positive evidence, return `Unknown`.
+   - memory map/vector-table pattern checks for bare-metal targets
+4. Build artifact profile first, then apply cross-layer context biasing.
+5. Print score tables.
+6. Pick label with highest score.
+7. Resolve ties as `Ambiguous: ...`.
+8. If no positive evidence, return `Unknown`.
 
 Compiler detection follows a similar but separate scoring pass and returns:
 - `GCC`
@@ -101,6 +114,14 @@ Build-system detection follows another independent scoring pass and returns labe
 - `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
 - or `Ambiguous: ...` / `Unknown`
 
+Artifact detection returns:
+- `Bare-metal Firmware`
+- `Linux User-space Executable`
+- `Linux Shared Library`
+- `Linux Kernel Module`
+- `Relocatable Object`
+- `Ambiguous: ...` / `Unknown`
+
 ## 5. Scoring Strategy
 
 The engine uses additive scoring with weighted signals:
@@ -117,6 +138,43 @@ Important design choices:
 - Go attribution requires explicit Go runtime/program symbols and does not treat generic file symbols such as `runtime.c` as Go evidence.
 - C scoring includes source-file density boosts from `.c` FILE symbols (excluding Sage-generated `sagec_<n>.c`) to reduce embedded-runtime false positives.
 - C# scoring avoids generic `mono` substring hits and prefers explicit runtime markers (`libmono`, `coreclr`, `hostfxr`, `hostpolicy`, `dotnet`).
+- Artifact context is fed back into language/compiler/build-system scoring to reduce cross-domain false positives.
+
+## 6A. Artifact Heuristic Catalog
+
+### 6A.1 Bare-metal Firmware
+
+Primary signals:
+- no `PT_INTERP` and no/low `DT_NEEDED`
+- embedded machine type (`EM_ARM`, `EM_AARCH64`, `EM_RISCV`, etc.)
+- firmware-centric sections (`.boot2`, `.binary_info`, `.ram_vector_table`, `.scratch_*`)
+- MCU memory-map entrypoints and vector-table-like data patterns
+- SDK/runtime clues (Pico SDK, CMSIS, syscall-stub/newlib patterns)
+
+### 6A.2 Linux User-space Executable
+
+Primary signals:
+- `PT_INTERP` present
+- `PT_DYNAMIC` and `DT_NEEDED` dependencies
+- user-space runtime symbols (`__libc_start_main`)
+- ELF type/layout consistency (`ET_EXEC` or PIE-style `ET_DYN + PT_INTERP`)
+
+### 6A.3 Linux Shared Library
+
+Primary signals:
+- `ET_DYN` with `DT_NEEDED` and no `PT_INTERP`
+- dynamic-linking structures without executable-loader shape
+
+### 6A.4 Linux Kernel Module
+
+Primary signals:
+- module sections (`.modinfo`, `.gnu.linkonce.this_module`)
+- kernel module symbols (`__this_module`, `module_layout`, `init_module`, `cleanup_module`)
+
+### 6A.5 Relocatable Object
+
+Primary signals:
+- ELF type `ET_REL`
 
 ## 6. Language Heuristic Catalog
 
@@ -286,6 +344,7 @@ Evidence sources:
 - debug/string path fragments (for example `CMakeFiles`, `meson-private`, `bazel-out`, `target/debug`)
 - note sections (for example `.note.go.buildid`)
 - language-runtime symbols and dynamic dependencies (Go, Dart/Flutter, .NET, Zig)
+- artifact feedback (for example firmware + Pico markers down-weighting Go Toolchain false positives)
 
 Outputs include:
 - `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
@@ -306,6 +365,12 @@ Color/styling:
   - `Detected Source Language (heuristic): ...`
   - `Detected Compiler (heuristic): ...`
   - `Detected Host Build System (heuristic): ...`
+  - `Detected Artifact Type (heuristic): ...`
+
+Textual mode:
+- optional `--ui textual`
+- provides paneled tabs (Summary, Scores, Metadata, Evidence)
+- keeps default plain mode unchanged for scripts/tests
 
 ## 10. Corpus Testing
 
@@ -336,6 +401,7 @@ Verbosity levels:
 - Haskell/OCaml/Julia/Lua language inference
 - GCC/Clang/Rustc/Go/NASM/FASM/MASM/TASM compiler inference
 - build-system inference basics
+- artifact profile classification (firmware/userspace/shared library)
 - disassembly-pattern ASM boosting
 - false-positive regressions (`runtime.c` should not imply Go, weak `mono*` text should not imply C#, mixed C + embedded Sage symbols should still classify as C when C evidence dominates)
 
@@ -351,6 +417,7 @@ Benefits:
 3. Static links can hide library-based hints.
 4. Some ecosystems share C/C++ runtime artifacts, requiring strong disambiguators.
 5. Compiler detection is best-effort and can be unknown/ambiguous.
+6. Artifact target/SDK/RTOS hints are probabilistic when explicit markers are sparse.
 
 ## 13. Extending to New Languages
 
@@ -411,6 +478,13 @@ Detailed metadata:
 PYTHONPATH=src python3 src/elfscan.py -m detailed test-bin/aarch64/hello_go
 ```
 
+Textual UI report (optional dependency):
+
+```bash
+python3 -m pip install textual
+PYTHONPATH=src python3 src/elfscan.py --ui textual /home/kraken/Devel/littleOS/build/littleos.elf
+```
+
 Run full tests:
 
 ```bash
@@ -438,6 +512,13 @@ python3 build_hello.py --all
 ## 17. Research References
 
 The current heuristic expansion was informed by official/toolchain docs:
+- ELF file format and header semantics (`PT_INTERP`, `PT_DYNAMIC`, `DT_NEEDED`): https://man7.org/linux/man-pages/man5/elf.5.html
+- System V ABI ELF specification: https://refspecs.linuxfoundation.org/elf/gabi4+/contents.html
+- RP2040 datasheet: https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+- CMSIS startup/vector conventions: https://arm-software.github.io/CMSIS_6/latest/Core/group__compiler__conntrol__gr.html
+- Textual framework documentation: https://textual.textualize.io/
+- FreeRTOS API reference: https://www.freertos.org/a00106.html
+- Zephyr kernel services documentation: https://docs.zephyrproject.org/latest/kernel/services/index.html
 - Rust symbol mangling: https://doc.rust-lang.org/rustc/symbol-mangling/index.html
 - Go build IDs and ELF note behavior: https://pkg.go.dev/cmd/internal/buildid
 - GHC FFI runtime init (`hs_init`): https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/ffi.html

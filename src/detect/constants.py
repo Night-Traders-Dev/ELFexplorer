@@ -53,6 +53,14 @@ BUILD_SYSTEM_HEURISTICS = (
     "Pico SDK",
 )
 
+ARTIFACT_HEURISTICS = (
+    "Bare-metal Firmware",
+    "Linux User-space Executable",
+    "Linux Shared Library",
+    "Linux Kernel Module",
+    "Relocatable Object",
+)
+
 LANGUAGE_STRING_SCAN_SECTIONS = (
     ".rodata",
     ".strtab",
@@ -73,6 +81,14 @@ COMPILER_STRING_SCAN_SECTIONS = (
 BUILD_SYSTEM_STRING_SCAN_SECTIONS = (
     ".comment",
     ".debug_info",
+    ".debug_str",
+    ".rodata",
+    ".strtab",
+    ".dynstr",
+)
+
+ARTIFACT_STRING_SCAN_SECTIONS = (
+    ".comment",
     ".debug_str",
     ".rodata",
     ".strtab",
@@ -392,3 +408,103 @@ BUILD_SYSTEM_MARKERS = {
         b"hardware_regs/include/hardware/regs",
     ),
 }
+
+ARTIFACT_SECTION_MARKERS = {
+    "firmware": (
+        ".boot2",
+        ".binary_info",
+        ".ram_vector_table",
+        ".vector_table",
+        ".isr_vector",
+        ".scratch_x",
+        ".scratch_y",
+    ),
+    "kernel_module": (
+        ".modinfo",
+        ".gnu.linkonce.this_module",
+    ),
+}
+
+ARTIFACT_EMBEDDED_MACHINES = {
+    "EM_ARM",
+    "EM_AARCH64",
+    "EM_RISCV",
+    "EM_MIPS",
+    "EM_MICROBLAZE",
+    "EM_AVR",
+}
+
+ARTIFACT_PICO_STRING_MARKERS = (
+    b"/pico-sdk/",
+    b"pico_platform",
+    b"hardware_regs/include/hardware/regs",
+    b"hardware_structs/include/hardware/structs",
+    b"pico_stdio",
+)
+
+ARTIFACT_PICO_SYMBOL_MARKERS = (
+    "multicore_launch_core1",
+    "multicore_reset_core1",
+    "hardware_alarm_",
+    "pico_get_unique_board_id",
+    "reset_usb_boot",
+    "pio_sm_",
+)
+
+ARTIFACT_CMSIS_MARKERS = (
+    b"cmsis",
+    b"systeminit",
+    b"__isr_vector",
+    b"hardfault_handler",
+    b"pendsv_handler",
+    b"systick_handler",
+)
+
+ARTIFACT_FREERTOS_MARKERS = (
+    b"freertos",
+    b"xtaskcreate",
+    b"vtaskstartscheduler",
+    b"xqueue",
+    b"xsemaphore",
+    b"pvportmalloc",
+)
+
+ARTIFACT_ZEPHYR_MARKERS = (
+    b"zephyr",
+    b"k_thread_create",
+    b"z_impl_",
+    b"z_kernel",
+    b"k_sem_take",
+)
+
+ARTIFACT_RTTHREAD_MARKERS = (
+    b"rt-thread",
+    b"rt_thread_create",
+    b"rt_kprintf",
+    b"rt_device_",
+)
+
+ARTIFACT_NEWLIB_MARKERS = (
+    b"newlib",
+    b"newlib_interface",
+    b"_sbrk_r",
+    b"_write_r",
+    b"_read_r",
+    b"_fstat_r",
+    b"_isatty_r",
+    b"_close_r",
+    b"_exit",
+)
+
+ARTIFACT_GLIBC_MARKERS = (
+    b"glibc",
+    b"gnu c library",
+    b"__libc_start_main",
+)
+
+ARTIFACT_KERNEL_MODULE_SYMBOL_MARKERS = (
+    "__this_module",
+    "module_layout",
+    "init_module",
+    "cleanup_module",
+)
