@@ -235,6 +235,10 @@ Output:
 - tie -> ambiguous
 - weak/no signal -> unknown (minimum confidence threshold applied)
 
+Scope note:
+- compiler inference is primarily for C/C++/ASM artifacts
+- non-C-family artifacts are gated to `Unknown` unless explicit compiler banners are present
+
 ## 8. Build-System Detection
 
 Build-system detection is intentionally best-effort and relies on embedded clues.

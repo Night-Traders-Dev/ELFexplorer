@@ -67,7 +67,7 @@ def analyze_elf(filepath, output_mode):
 
             print(_rule("Heuristic Scoring", FG_YELLOW))
             source_language = detect_source_language(elf)
-            compiler = detect_compiler(elf)
+            compiler = detect_compiler(elf, source_language=source_language)
             build_system = detect_build_system(elf)
             print()
 

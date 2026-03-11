@@ -37,6 +37,8 @@ Current compiler labels:
 - `Ambiguous: GCC/Clang`
 - `Unknown`
 
+Compiler inference is intentionally conservative outside C/C++/ASM binaries and will usually return `Unknown` for other languages.
+
 ## Build-System Detection
 
 Current host build-system labels:
