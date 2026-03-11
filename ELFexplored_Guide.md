@@ -332,8 +332,30 @@ When adding a language:
 4. Prefer adding strong positive markers before adding penalties.
 5. Ensure tie handling stays explainable.
 6. Update README and this guide with any behavioral changes.
+7. If behavior or features changed, update project version metadata.
 
-## 15. Practical Commands
+## 15. Versioning and Documentation Discipline
+
+Current project version is tracked in the root `VERSION` file and exposed by:
+- `python3 src/elfscan.py --version`
+
+Release/update checklist:
+1. Update `VERSION` with the new SemVer value.
+2. Update `README.md`:
+   - version badge
+   - current version line
+   - any changed commands/behavior
+3. Update `ELFexplored_Guide.md`:
+   - methods/heuristics/architecture updates
+   - release-impact notes
+4. Run full tests:
+   - `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v`
+5. Confirm CLI version output matches `VERSION`.
+
+Policy:
+- Every feature or heuristic change must finish with synchronized updates to both `README.md` and `ELFexplored_Guide.md`.
+
+## 16. Practical Commands
 
 Single binary scan:
 
@@ -359,7 +381,19 @@ High-verbosity corpus diagnostics:
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -vvvv
 ```
 
-## 16. Summary
+Check current project version:
+
+```bash
+python3 src/elfscan.py --version
+```
+
+Rebuild and sync hello corpus fixtures:
+
+```bash
+python3 build_hello.py --all
+```
+
+## 17. Summary
 
 `ELFexplorer` is an evidence-driven ELF fingerprinting framework with:
 - broad multi-language heuristics

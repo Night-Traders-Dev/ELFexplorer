@@ -21,6 +21,7 @@ from elftools.elf.elffile import ELFFile
 
 from detect.elfdetect import detect_build_system, detect_compiler, detect_source_language
 from info.elfinfo import print_detailed_info, print_general_info, print_important_info
+from version import get_version
 
 STYLE_RESET = "\033[0m"
 STYLE_BOLD = "\033[1m"
@@ -62,6 +63,7 @@ def analyze_elf(filepath, output_mode):
             print(_rule("ELF Scan Report", FG_CYAN))
             _print_key_value("File", filepath)
             _print_key_value("Mode", output_mode)
+            _print_key_value("Version", get_version(), FG_MAGENTA)
             _print_key_value("PID", str(os.getpid()), FG_MAGENTA)
             print()
 
@@ -98,6 +100,11 @@ def analyze_elf(filepath, output_mode):
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze an ELF file with selectable output modes.")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ELFexplorer {get_version()}",
+    )
     parser.add_argument("filepath", help="Path to the ELF file to analyze.")
     parser.add_argument(
         "-m",

@@ -1,1 +1,3 @@
-# This file marks the src directory as a Python package.
+from version import get_version
+
+__version__ = get_version()

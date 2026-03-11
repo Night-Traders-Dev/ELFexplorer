@@ -1,5 +1,10 @@
 # ELFexplorer
 
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#versioning)
+[![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
+[![Tests](https://img.shields.io/badge/tests-unittest%20heuristics%20%2B%20corpus-brightgreen)](#testing)
+
 `ELFexplorer` is a modular ELF analysis and heuristic fingerprinting tool focused on language and compiler inference.
 
 It currently provides:
@@ -85,7 +90,7 @@ python3 -m pip install pyelftools
 ## CLI Usage
 
 ```bash
-python3 src/elfscan.py [-m general|important|detailed] <elf_binary>
+python3 src/elfscan.py [--version] [-m general|important|detailed] <elf_binary>
 ```
 
 Examples:
@@ -93,7 +98,23 @@ Examples:
 ```bash
 python3 src/elfscan.py test-bin/x86_64/hello_rust
 python3 src/elfscan.py -m detailed test-bin/aarch64/hello_go
+python3 src/elfscan.py --version
 ```
+
+## Versioning
+
+- Canonical project version is tracked in the root [`VERSION`](VERSION) file.
+- Current version: `0.1.0`
+- The CLI reports this via:
+
+```bash
+python3 src/elfscan.py --version
+```
+
+When bumping versions, update all three together:
+- [`VERSION`](VERSION)
+- README badges/current version line
+- [`ELFexplored_Guide.md`](ELFexplored_Guide.md) release notes section
 
 ## Styled Output
 
@@ -126,6 +147,27 @@ Example:
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -vvv
 ```
+
+## Rebuilding Corpus with hello-multilang
+
+`build_hello.py` orchestrates the `hello-multilang` Docker workflow and then syncs produced ELF binaries into `test-bin/`.
+
+Build all architectures and sync:
+
+```bash
+python3 build_hello.py --all
+```
+
+Build selected architectures and sync:
+
+```bash
+python3 build_hello.py --arch x86_64,rv64
+```
+
+Useful options:
+- `--skip-image-build`: reuse existing Docker image
+- `--skip-docker-run`: only sync existing `hello-multilang/output/`
+- `--dry-run`: print actions without executing commands or changing files
 
 ## Corpus Expectations
 
