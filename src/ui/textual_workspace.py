@@ -35,6 +35,29 @@ def _report_brief(report):
     )
 
 
+def _report_detail_lines(report):
+    scan = report.get("scan_result", {})
+    artifact = scan.get("artifact_profile", {})
+    lines = [
+        f"file: {report.get('file', 'Unknown')}",
+        f"mode: {report.get('mode', 'general')}",
+        f"version: {report.get('version', 'Unknown')}",
+        f"generated_at: {report.get('generated_at', 'Unknown')}",
+        f"source_language: {scan.get('source_language', 'Unknown')}",
+        f"compiler: {scan.get('compiler', 'Unknown')}",
+        f"build_system: {scan.get('build_system', 'Unknown')}",
+        f"artifact_type: {artifact.get('artifact_type', 'Unknown')}",
+        f"artifact_confidence: {artifact.get('confidence', 0)}",
+        f"target_hint: {artifact.get('target', 'Unknown')}",
+        f"sdk_hint: {artifact.get('sdk', 'Unknown')}",
+        f"rtos_hint: {artifact.get('rtos', 'None detected')}",
+        f"runtime_hint: {artifact.get('runtime', 'Unknown')}",
+        f"linkage_model: {artifact.get('linkage_model', 'Unknown')}",
+        f"loader: {artifact.get('loader', 'None')}",
+    ]
+    return lines
+
+
 def run_textual_workspace(callbacks):
     from textual.app import App, ComposeResult
     from textual.containers import Vertical
@@ -261,7 +284,9 @@ def run_textual_workspace(callbacks):
                     if not self.last_report:
                         self._log("[red]No current report to show.[/red]")
                         return
-                    callbacks["show_report"](self.last_report)
+                    self._log("[bold]Current report:[/bold]")
+                    for line in _report_detail_lines(self.last_report):
+                        self._log(f"  {line}")
                     return
 
                 self._log(f"[red]Unknown command:[/red] {command}")
@@ -269,4 +294,3 @@ def run_textual_workspace(callbacks):
                 self._log(f"[red]Error:[/red] {exc}")
 
     WorkspaceApp().run()
-

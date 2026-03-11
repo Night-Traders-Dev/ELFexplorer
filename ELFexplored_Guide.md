@@ -1,544 +1,469 @@
 # ELFexplored Guide
 
-## 1. Project Purpose
+## 1. Overview
 
-`ELFexplorer` is a static ELF analysis utility that combines:
-- structural ELF parsing
-- heuristic language inference
-- heuristic compiler inference
-- heuristic host build-system inference
-- heuristic artifact profiling (firmware/userspace/shared/module/object)
-- corpus-based regression testing across architectures
+`ELFexplorer` is an evidence-driven ELF analysis framework that performs:
+- source-language inference
+- compiler/assembler inference
+- host build-system inference
+- artifact classification (firmware/userspace/library/module/object)
+- structured reporting and export for single scans and scan collections
 
-This project is intentionally heuristic-first. It does not claim perfect language attribution for every ELF. Instead, it provides defensible, inspectable evidence-based guesses.
+The project is intentionally heuristic. It does not claim perfect provenance reconstruction from arbitrary stripped binaries. It is designed to provide:
+- transparent score breakdowns
+- inspectable evidence markers
+- deterministic regression tests
+- conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-## 2. What the Tool Produces
+Current release: `0.4.0` (see `VERSION`).
 
-For each ELF input, the CLI provides:
-- artifact scoring table
-- language scoring table
-- compiler scoring table
-- build-system scoring table
-- artifact profile details (confidence, target, SDK, RTOS, runtime, linkage)
-- selected best language label
-- selected best compiler label
-- selected best build-system label
-- selected best artifact label
-- ELF metadata output in one of three modes
+## 2. Analysis Layers
 
-Modes:
-- `general`: concise header-centric view
-- `important`: key segments and fields
-- `detailed`: expanded section/header details
+### 2.1 ELF Structural Layer
 
-## 3. Repository Layout
+Structural extraction is based on `pyelftools` and includes:
+- ELF type (`ET_EXEC`, `ET_DYN`, `ET_REL`)
+- machine (`EM_*`)
+- entry point (`e_entry`)
+- program headers (`PT_INTERP`, `PT_DYNAMIC`, load segment map)
+- section names and section payload scans
+- dynamic dependencies (`DT_NEEDED`)
+
+This layer supplies hard constraints and shape hints used by all upper layers.
+
+### 2.2 Heuristic Evidence Layer
+
+Evidence classes:
+- section-name markers
+- symbol-name markers (`.symtab`, `.dynsym`)
+- note sections (`.note.*`)
+- compiler/build comments (`.comment`)
+- debug strings (`.debug_str`, string-bearing sections)
+- runtime library dependencies
+- architecture-specific text-pattern checks
+
+### 2.3 Cross-Layer Context Layer
+
+Artifact profile is computed first and fed into:
+- language scoring
+- compiler scoring
+- build-system scoring
+
+This context feedback helps suppress false positives such as hosted-runtime signatures inside bare-metal firmware.
+
+### 2.4 Presentation and Workflow Layer
+
+Outputs are available as:
+- plain CLI report
+- Textual report UI
+- Textual workspace UX (interactive multi-scan workflow)
+- Markdown export
+- PDF export
+
+## 3. Repository Architecture
 
 - `src/elfscan.py`
-  - top-level CLI
-  - structured and colorized report framing
-  - invokes detection and metadata modules
+  - CLI entrypoint
+  - report orchestration
+  - crawl, task, save/load, export plumbing
+  - UI mode switching (`plain` / `textual`)
 - `src/detect/elfdetect.py`
-  - compatibility import path
-  - re-exports modular detectors
+  - compatibility re-export of detector entrypoints
 - `src/detect/language/core.py`
-  - language detector orchestration and final tie-breaking
+  - language scoring orchestration and final selection
 - `src/detect/compiler.py`
-  - compiler detector orchestration and final tie-breaking
+  - compiler scoring orchestration and final selection
 - `src/detect/buildsystem.py`
-  - build-system detector orchestration and final tie-breaking
+  - build-system scoring orchestration and final selection
 - `src/detect/artifact.py`
-  - artifact-profile orchestration and confidence/summary selection
-- `src/detect/arch/`
-  - architecture/binary-shape heuristics (ASM-focused currently)
+  - artifact profile orchestration (confidence + hints)
 - `src/detect/techniques/`
-  - grouped heuristic implementations by evidence type
+  - technique modules grouped by evidence type
 - `src/detect/techniques/artifact.py`
-  - firmware/userspace/module/object profiling heuristics
-- `src/detect/constants.py` and `src/detect/utils.py`
-  - shared marker catalogs and reusable readers/helpers
+  - firmware/userspace/shared/module/object heuristics
 - `src/symbols/elfsymbols.py`
-  - symbol-table heuristics
-  - cross-language symbol markers and pattern checks
+  - symbol-pattern scoring helpers
 - `src/info/elfinfo.py`
-  - metadata renderers for ELF header/program headers/sections
+  - metadata renderers (`general`, `important`, `detailed`)
 - `src/ui/textual_report.py`
-  - optional Textual-based paneled report UX (`--ui textual`)
-- `tests/test_elfscan_cli.py`
-  - integration tests that run the CLI over `test-bin/*`
-  - pass/fail status lines with color and verbosity levels
-- `tests/test_elfdetect_heuristics.py`
-  - focused unit tests for heuristic behavior with fake ELF fixtures
-- `test-bin/`
-  - architecture-segmented corpus used for regression validation
+  - tabbed Textual report viewer
+- `src/ui/textual_workspace.py`
+  - interactive Textual workspace for scan/load/export workflows
+- `src/reporting/persistence.py`
+  - JSON persistence APIs
+- `src/reporting/export.py`
+  - Markdown/PDF formatting and export
+- `src/reporting/tasks.py`
+  - JSON task-file runner for batch operations
+- `tests/`
+  - corpus integration and focused heuristic unit tests
 
-## 4. Detection Pipeline
+## 4. Scoring and Decision Model
 
-High-level flow:
+Each detector uses additive weighted scoring.
 
-1. Open ELF with `pyelftools`.
-2. Initialize per-language score dictionary.
-3. Score by evidence type:
-   - program header shape (`PT_INTERP`, `PT_DYNAMIC`, `PT_LOAD`, `ET_*`)
-   - `.comment` compiler/build strings
-   - note sections
-   - dynamic dependencies (`DT_NEEDED`)
-   - symbols (`.symtab` and `.dynsym`)
-   - string markers in relevant sections
-   - debug information snippets
-   - section-name patterns
-   - binary-shape heuristics (ASM)
-   - disassembly-inspired opcode pattern scans in `.text`
-   - memory map/vector-table pattern checks for bare-metal targets
-4. Build artifact profile first, then apply cross-layer context biasing.
-5. Print score tables.
-6. Pick label with highest score.
-7. Resolve ties as `Ambiguous: ...`.
-8. If no positive evidence, return `Unknown`.
+### 4.1 Score Inputs
 
-Compiler detection follows a similar but separate scoring pass and returns:
-- `GCC`
-- `Clang`
-- `Rustc`
-- `Go gc`
-- `Zig`
-- `NASM`
-- `FASM`
-- `MASM`
-- `TASM`
-- `GHC`
-- `OCamlopt`
-- `Ambiguous: ...`
-- `Unknown`
+A score bucket receives increments from multiple independent signals.
+Example dimensions:
+- strong direct marker (high weight)
+- supporting marker cluster (medium)
+- weak generic marker (low)
 
-Build-system detection follows another independent scoring pass and returns labels like:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
-- or `Ambiguous: ...` / `Unknown`
+### 4.2 Final Label Selection
 
-Artifact detection returns:
+1. Identify top score.
+2. If top <= 0, output `Unknown`.
+3. If multiple labels share top score, output `Ambiguous: ...`.
+4. Otherwise return highest bucket label.
+
+### 4.3 Reliability Principles
+
+- prefer positive evidence over large negative penalty matrices
+- avoid overfitting to a single marker class
+- maintain explicit abstention paths (`Unknown`/`Ambiguous`)
+- keep parser-critical output lines stable for automation
+
+## 5. Language Detection Coverage
+
+Current labels:
+- `ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
+
+### 5.1 High-value language cues
+
+- ASM: `_start` startup shape, minimal runtime profile, section/entry alignment
+- C: real `.c` FILE symbol density, libc shape, lack of stronger language signatures
+- C++: `_Z*`, RTTI/vtable/typeinfo patterns, stdlib linkage hints
+- Rust: `rust_*`, panic/unwind/runtime markers, mangling patterns
+- Go: `go.*` runtime/program symbols, `.note.go.buildid`, runtime graph markers
+- Dart: `Dart_*` APIs and runtime symbols
+- Nim/Zig: runtime/toolchain symbol and comment markers
+- C#: explicit CLR/Mono host/runtime markers
+- SageLang: generated C pattern (`sagec_<n>.c`) + Sage runtime clusters with anchor checks
+
+## 6. Compiler/Assembler Detection Coverage
+
+Current labels:
+- `GCC`, `Clang`, `Rustc`, `Go gc`, `Zig`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
+
+Evidence sources:
+- `.comment`
+- DWARF `DW_AT_producer`
+- note/section markers (`.note.go.buildid`, `.note.rustc`)
+- toolchain-specific symbol families
+- runtime dependency signals
+
+Assembler family detection for ELF currently recognizes NASM/FASM/MASM/TASM marker families when present in producer/comment/debug contexts.
+
+## 7. Build-System Detection Coverage
+
+Current labels:
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Ambiguous: ...`, `Unknown`
+
+Evidence sources:
+- path fragments in debug strings
+- section/note markers
+- runtime and dependency hints
+- artifact-context biasing (for example, firmware + Pico markers)
+
+## 8. Artifact Profiling
+
+Current labels:
 - `Bare-metal Firmware`
 - `Linux User-space Executable`
+- `Static User-space Executable`
 - `Linux Shared Library`
 - `Linux Kernel Module`
 - `Relocatable Object`
-- `Ambiguous: ...` / `Unknown`
-
-## 5. Scoring Strategy
-
-The engine uses additive scoring with weighted signals:
-- strong runtime/API markers: high weight
-- generic markers: low weight
-- cluster/combination signals: bonus weight
-- contradiction or ambiguity handled by top-score tie reporting
-
-Important design choices:
-- Symbol deduplication across `.symtab` and `.dynsym` to avoid accidental double-counting.
-- Runtime-string evidence for SageLang is gated behind Sage anchors to prevent false positives.
-- ASM detection uses shape rules, not only symbol names.
-- Dart detection uses explicit `Dart_*` API signatures and marker density.
-- Go attribution requires explicit Go runtime/program symbols and does not treat generic file symbols such as `runtime.c` as Go evidence.
-- C scoring includes source-file density boosts from `.c` FILE symbols (excluding Sage-generated `sagec_<n>.c`) to reduce embedded-runtime false positives.
-- C# scoring avoids generic `mono` substring hits and prefers explicit runtime markers (`libmono`, `coreclr`, `hostfxr`, `hostpolicy`, `dotnet`).
-- Artifact context is fed back into language/compiler/build-system scoring to reduce cross-domain false positives.
-
-## 6A. Artifact Heuristic Catalog
-
-### 6A.1 Bare-metal Firmware
-
-Primary signals:
-- no `PT_INTERP` and no/low `DT_NEEDED`
-- embedded machine type (`EM_ARM`, `EM_AARCH64`, `EM_RISCV`, etc.)
-- firmware-centric sections (`.boot2`, `.binary_info`, `.ram_vector_table`, `.scratch_*`)
-- MCU memory-map entrypoints and vector-table-like data patterns
-- SDK/runtime clues (Pico SDK, CMSIS, syscall-stub/newlib patterns)
-
-### 6A.2 Linux User-space Executable
-
-Primary signals:
-- `PT_INTERP` present
-- `PT_DYNAMIC` and `DT_NEEDED` dependencies
-- user-space runtime symbols (`__libc_start_main`)
-- ELF type/layout consistency (`ET_EXEC` or PIE-style `ET_DYN + PT_INTERP`)
-
-### 6A.3 Linux Shared Library
-
-Primary signals:
-- `ET_DYN` with `DT_NEEDED` and no `PT_INTERP`
-- dynamic-linking structures without executable-loader shape
-
-### 6A.4 Linux Kernel Module
-
-Primary signals:
-- module sections (`.modinfo`, `.gnu.linkonce.this_module`)
-- kernel module symbols (`__this_module`, `module_layout`, `init_module`, `cleanup_module`)
-
-### 6A.5 Relocatable Object
-
-Primary signals:
-- ELF type `ET_REL`
-
-## 6. Language Heuristic Catalog
-
-### 6.1 ASM
-
-Main logic:
-- `_start` present
-- `main` absent
-- often no `.dynamic` and no `.interp` for static minimalist binaries
-- small section count and startup-only shape
-
-Why this matters:
-- Assembly hello-world binaries often contain `_start` directly and bypass C runtime entry conventions.
-
-### 6.2 C
-
-Common evidence:
-- GCC/Clang comment markers
-- libc-only dynamic linkage (`libc.so.6`) boost
-- high volume of real `.c` source file symbols in symbol tables
-- absence of stronger C++/Rust/Dart/etc. signatures
-
-### 6.3 C++
-
-Common evidence:
-- mangled `_Z*` symbols
-- `std::`, `typeinfo`, RTTI/vtable patterns
-- `libstdc++`/`libc++` dynamic dependencies
-- guarded handling of `__cxa_finalize` so it does not over-trigger by itself
-
-### 6.4 C#
-
-Common evidence:
-- runtime/library markers: `coreclr`, `hostfxr`, `hostpolicy`, `libmono`, `dotnet`, `mscorlib`
-- dynamic dependencies referencing .NET runtime components
-- strings and symbols linked to managed runtime hosting
-
-### 6.5 Rust
-
-Common evidence:
-- `rust_*`, allocator/runtime symbols, panic/unwind hints
-- Rust-style mangling patterns
-- debug string mentions of `rustc`
-
-### 6.6 Go
-
-Common evidence:
-- `go.func.`, `go.itab.`, `main.main`, `runtime.main`/`runtime.rt0_*` symbol conventions
-- `.note.go.buildid`
-- characteristic runtime symbol volume
-- explicit filtering of generic file symbols like `runtime.c`
-
-### 6.7 Dart
-
-Common evidence:
-- large presence of `Dart_*` symbols/functions
-- marker density (`dart_initialize`, isolate/kernel/AOT strings)
-- dynamic/runtime hints such as embedded Dart runtime APIs
-
-Why prior versions failed:
-- Without Dart-specific markers, generic C++ artifacts tended to win.
-
-### 6.8 D
-
-Common evidence:
-- D runtime markers such as `_dmain`, `_dmodule`, `dmd`/`phobos` references
-
-### 6.9 Ada
-
-Common evidence:
-- `ada__` symbol patterns
-- GNAT-linked markers
-
-### 6.10 Fortran
-
-Common evidence:
-- `_gfortran*` symbols or gfortran build/runtime markers
-
-### 6.11 Nim
-
-Common evidence:
-- `nimrtl`, `nim_gc`, `NimMain`, `nimInit`, related strings
-- `.note.nim` or nim-specific tokens
-
-### 6.12 Zig
-
-Common evidence:
-- zig comment markers (`zig`, `ziglang`)
-- zig symbol signatures (`__zig_*`, `zig_*`)
-- zig-specific string patterns
-
-### 6.13 Swift
-
-Common evidence:
-- `swift` symbol/string markers
-- swift-specific notes/sections
-
-### 6.14 Java
-
-Common evidence:
-- `jni_`, `jvm`, `javac`, OpenJDK markers
-- Java/JVM-ish section/string clues
-
-### 6.15 Python
-
-Common evidence:
-- `pyinit`, python symbol references
-- python-specific build/debug strings
-
-### 6.16 SageLang
-
-Common evidence:
-- `sagec_<digits>.c` generated C file symbols
-- dense `sage_*` runtime symbol families
-- Sage runtime marker clusters (`sage_try_stack`, `sage_exception_value`, `sage_method_table`, `sage_class_registry`)
-- Sage-specific runtime error strings plus anchors
-
-### 6.17 Haskell
-
-Common evidence:
-- `hs_init`, `stg_*`, `rts_*` symbol families
-- `libHSrts` runtime linkage and GHC string markers
-
-### 6.18 OCaml
-
-Common evidence:
-- `caml_startup`, `caml_main`, `caml_*` symbols
-- runtime linkage markers such as `libasmrun`
-
-### 6.19 Julia
-
-Common evidence:
-- embedding/runtime symbols (`jl_init`, `jl_atexit_hook`, `julia_*`)
-- `libjulia` markers in strings/dependencies
-
-### 6.20 Lua
-
-Common evidence:
-- Lua C API symbols (`lua_*`, `luaL_*`, `lua_pcall*`)
-- `liblua` / `luajit` runtime markers
-
-## 7. Compiler and Assembler Detection
-
-Compiler detection is separate from language detection.
-
-Evidence sources:
-- `.comment` and debug strings (GCC/Clang/Rustc/Go/Zig and assembler markers)
-- DWARF compile-unit producers (`DW_AT_producer`)
-- `.GCC.command.line` and note/section hints (`.note.go.buildid`, `.note.rustc`, assembler note sections)
-- marker symbols (`__clang_call_terminate`, `__gcov_*`, Rust/Go/Zig/runtime and assembler-specific markers)
-- dynamic libs (`libclang_rt`/`libc++` vs `libgcc`/`libstdc++`, plus `libHSrts`, `libasmrun`)
-
-Output:
-- strongest positive bucket wins
-- tie -> ambiguous
-- weak/no signal -> unknown (minimum confidence threshold applied)
-
-Scope note:
-- compiler selection is language-aware when language detection is decisive
-- ASM binaries can now resolve assembler toolchains (`NASM`, `FASM`, `MASM`, `TASM`) when producer/comment/debug markers exist
-
-## 8. Build-System Detection
-
-Build-system detection is intentionally best-effort and relies on embedded clues.
-
-Evidence sources:
-- debug/string path fragments (for example `CMakeFiles`, `meson-private`, `bazel-out`, `target/debug`)
-- note sections (for example `.note.go.buildid`)
-- language-runtime symbols and dynamic dependencies (Go, Dart/Flutter, .NET, Zig)
-- artifact feedback (for example firmware + Pico markers down-weighting Go Toolchain false positives)
-
-Outputs include:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`
-- `Ambiguous: ...` or `Unknown`
-
-## 9. CLI Visual Design
-
-`src/elfscan.py` now prints structured blocks:
+- `Ambiguous: ...`
+- `Unknown`
+
+Profile fields include:
+- confidence score
+- target hint
+- SDK/framework hint
+- RTOS hint
+- runtime C library hint
+- linkage model
+- loader information
+- indicator list
+
+### 8.1 Firmware cues
+
+- missing interpreter + low dynamic dependency profile
+- MCU/embedded machine types
+- vector-table-like load content and memory-map alignment
+- firmware-centric sections (`.boot2`, `.binary_info`, etc.)
+- SDK/runtime markers (Pico SDK, CMSIS/syscall stubs)
+
+### 8.2 Userspace cues
+
+- `PT_INTERP` presence
+- dynamic linker and `DT_NEEDED`
+- runtime entry symbols (`__libc_start_main`)
+- executable/shared layout consistency
+
+## 9. False-Positive Control
+
+Implemented controls:
+- Go classification requires explicit Go runtime/program fingerprints and ignores weak generic file-symbol collisions.
+- C# weak substring logic was tightened to runtime-host markers (`coreclr`, `hostfxr`, `hostpolicy`, `libmono`, `dotnet`).
+- C receives evidence boost from real C source symbol density.
+- SageLang runtime signal weighting requires stronger anchor combinations.
+- Artifact context is propagated into language/compiler/build-system scoring to reduce cross-domain misclassification.
+
+## 10. CLI and UX Behavior
+
+`elfscan.py` supports single or batch workflows.
+
+### 10.1 UI mode
+
+- default: `--ui textual`
+- fallback: `--ui plain`
+
+### 10.2 No-input behavior
+
+When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--load-collection`:
+- attempts to launch Textual workspace UX
+- if unavailable, prints guidance and exits non-zero
+
+### 10.3 Workload modes
+
+- single-file scan: positional ELF path
+- directory crawl: `--crawl`
+- task-file batch: `--task-file`
+- load existing report(s): `--load-scan`, `--load-collection`
+
+### 10.4 Persistence and export
+
+- save scan JSON: `--save-scan [path]`
+- save collection JSON: `--save-collection [path]`
+- export report: `--export-md`, `--export-pdf`
+- export collection: `--export-collection-md`, `--export-collection-pdf`
+
+## 11. Textual Workspace Command Surface
+
+Workspace commands:
+- `scan <file> [mode]`
+- `crawl <dir> [mode] [recursive:true/false] [max_files]`
+- `load <scan.json>`
+- `load-collection <collection.json>`
+- `list-saved`
+- `save [path]`
+- `save-collection [path]`
+- `export-md <path>`
+- `export-pdf <path>`
+- `export-collection-md <path>`
+- `export-collection-pdf <path>`
+- `show`
+- `help`
+- `quit`
+
+## 12. Report Layout Strategy
+
+### 12.1 Plain report
+
+Sections:
 - `ELF Scan Report`
 - `Heuristic Scoring`
 - `Detection Summary`
 - `ELF Metadata`
 
-Color/styling:
-- uses ANSI formatting when stdout is a TTY
-- disabled automatically when `NO_COLOR` is set
-- keeps parser-critical lines stable:
-  - `Detected Source Language (heuristic): ...`
-  - `Detected Compiler (heuristic): ...`
-  - `Detected Host Build System (heuristic): ...`
-  - `Detected Artifact Type (heuristic): ...`
+Summary lines are intentionally stable for parser tooling:
+- `Detected Source Language (heuristic): ...`
+- `Detected Compiler (heuristic): ...`
+- `Detected Host Build System (heuristic): ...`
+- `Detected Artifact Type (heuristic): ...`
 
-Textual mode:
-- optional `--ui textual`
-- provides paneled tabs (Summary, Scores, Metadata, Evidence)
-- keeps default plain mode unchanged for scripts/tests
+### 12.2 Markdown export
 
-## 10. Corpus Testing
+Includes:
+- report header metadata
+- summary table
+- top score tables (language/compiler/build/artifact)
+- artifact evidence bullets
+- metadata code block
 
-`tests/test_elfscan_cli.py` validates corpus binaries by executing `elfscan.py` directly.
+Collection Markdown includes global index + per-report sections.
 
-Test behavior:
-- verifies expected file inventory per architecture directory
+### 12.3 PDF export
+
+Requires `reportlab`.
+
+Includes professional tabular layout:
+- styled summary tables
+- score tables
+- artifact evidence
+- metadata block
+- multi-page collection reports (index + per-report pages)
+
+## 13. Task Files and Automation
+
+Task file format (`JSON`):
+
+```json
+{
+  "tasks": [
+    {"type": "scan", "path": "test-bin/x86_64/hello_c", "mode": "general"},
+    {"type": "crawl", "path": "test-bin", "recursive": true, "max_files": 50}
+  ]
+}
+```
+
+Execution:
+
+```bash
+python3 src/elfscan.py --task-file tasks.json --save-collection --export-collection-md reports/corpus.md
+```
+
+## 14. Testing Architecture
+
+### 14.1 Corpus CLI integration (`tests/test_elfscan_cli.py`)
+
+- validates corpus inventory shape by architecture folder
+- executes scanner over each fixture
 - infers expected language from filename (`hello_<lang>`)
-- captures CLI output
-- checks detected language line
-- prints colorized `[PASS]`/`[FAIL]` status per binary
+- checks detected language line in actual CLI output
+- prints colorized `[PASS]/[FAIL]`
+- supports verbosity levels 0..4 (`-q`, `-v`, `-vv`, `-vvv`, `-vvvv`)
 
-Verbosity levels:
-- Level 0: quiet (`-q`)
-- Level 1: default and `-v` (same behavior)
-- Level 2: `-vv`
-- Level 3: `-vvv`
-- Level 4: `-vvvv` (full captured output per binary)
+### 14.2 Heuristic unit tests (`tests/test_elfdetect_heuristics.py`)
 
-## 11. Unit Heuristic Testing
+Uses synthetic fake ELF objects to test:
+- language heuristics
+- compiler/build-system heuristics
+- artifact profile logic
+- key false-positive regressions
 
-`tests/test_elfdetect_heuristics.py` uses fake ELF objects to isolate and validate:
-- ASM shape detection
-- Dart symbol detection
-- C# runtime dependency detection
-- Zig marker detection
-- Nim symbol detection
-- Haskell/OCaml/Julia/Lua language inference
-- GCC/Clang/Rustc/Go/NASM/FASM/MASM/TASM compiler inference
-- build-system inference basics
-- artifact profile classification (firmware/userspace/shared library)
-- disassembly-pattern ASM boosting
-- false-positive regressions (`runtime.c` should not imply Go, weak `mono*` text should not imply C#, mixed C + embedded Sage symbols should still classify as C when C evidence dominates)
+### 14.3 Reporting tests (`tests/test_reporting.py`)
 
-Benefits:
-- fast execution
-- no dependency on external toolchains for every heuristic case
-- deterministic regression checks
+Covers:
+- save/load round trips
+- collection persistence
+- markdown export contents
+- PDF export behavior
+- task-file orchestration
 
-## 12. Current Boundaries and Tradeoffs
+Run all tests:
 
-1. Heuristic confidence depends on available symbols/strings/sections.
-2. Stripped binaries reduce evidence quality.
-3. Static links can hide library-based hints.
-4. Some ecosystems share C/C++ runtime artifacts, requiring strong disambiguators.
-5. Compiler detection is best-effort and can be unknown/ambiguous.
-6. Artifact target/SDK/RTOS hints are probabilistic when explicit markers are sparse.
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
-## 13. Extending to New Languages
+## 15. Reliability Roadmap
 
-When adding a language:
+High-impact additions for better accuracy:
+- compiler prologue/epilogue fingerprint banks per architecture
+- relocation-pattern families for static firmware vs static userspace separation
+- symbol version graph inference (`GLIBC_*`, `GCC_*`, `CXXABI_*`) weighting
+- richer DWARF harvesting (`DW_AT_comp_dir`, line program path clusters)
+- class-specific confidence calibration and abstention thresholds
+- larger labeled benchmark sets by architecture, optimization level, strip level, and linker
 
-1. Add language key to `SUPPORTED_LANGUAGES`.
-2. Add note/section markers if available.
-3. Add dynamic dependency hints.
-4. Add symbol-level hints in `elfsymbols.py`.
-5. Add string/debug markers.
-6. Add disambiguation rules if overlaps are likely.
-7. Add focused unit tests in `test_elfdetect_heuristics.py`.
-8. Add corpus samples and CLI test expectations.
+## 16. Expansion Roadmap
 
-## 14. Recommended Workflow for Heuristic Changes
+### 16.1 Languages
 
-1. Add or update binary samples under `test-bin/<arch>/`.
-2. Run:
-   - `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v`
-3. Inspect score tables for false-positive contributors.
-4. Prefer adding strong positive markers before adding penalties.
-5. Ensure tie handling stays explainable.
-6. Update README and this guide with any behavioral changes.
-7. If behavior or features changed, update project version metadata.
+Recommended next additions:
+- `Kotlin/Native`
+- `Crystal`
+- `V`
+- `Pascal/FreePascal`
+- stronger multi-arch corpus coverage for existing `Nim`, `Zig`, `SageLang`, `C#`
 
-## 15. Versioning and Documentation Discipline
+### 16.2 Compilers/toolchains
 
-Current project version is tracked in the root `VERSION` file and exposed by:
-- `python3 src/elfscan.py --version`
+Recommended next additions:
+- `ICC/ICX`
+- `TinyCC`
+- `LDC`/`GDC`
+- split `GNU as` vs generic GCC pipelines where evidence allows
+
+### 16.3 Build systems
+
+Recommended next additions:
+- `Buildroot`
+- `Yocto`
+- `QMake`
+- `Waf`
+- `Premake`
+- `PlatformIO`
+- `ESP-IDF (idf.py)`
+- `Zephyr west`
+
+## 17. Versioning and Documentation Policy
+
+Version source of truth:
+- root `VERSION`
 
 Release/update checklist:
-1. Update `VERSION` with the new SemVer value.
-2. Update `README.md`:
-   - version badge
-   - current version line
-   - any changed commands/behavior
-3. Update `ELFexplored_Guide.md`:
-   - methods/heuristics/architecture updates
-   - release-impact notes
-4. Run full tests:
-   - `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v`
-5. Confirm CLI version output matches `VERSION`.
+1. Update `VERSION`.
+2. Update `README.md` version badge and version section.
+3. Update this guide with new methods/heuristics/workflows.
+4. Run full tests.
+5. Verify `python3 src/elfscan.py --version` matches `VERSION`.
 
-Policy:
-- Every feature or heuristic change must finish with synchronized updates to both `README.md` and `ELFexplored_Guide.md`.
+Project policy:
+- Functional changes should ship with synchronized `README.md` and `ELFexplored_Guide.md` updates.
 
-## 16. Practical Commands
+## 18. Commands Reference
 
-Single binary scan:
+Single scan:
 
 ```bash
-PYTHONPATH=src python3 src/elfscan.py test-bin/x86_64/hello_rust
+python3 src/elfscan.py test-bin/x86_64/hello_rust
 ```
 
-Detailed metadata:
+Plain mode detailed:
 
 ```bash
-PYTHONPATH=src python3 src/elfscan.py -m detailed test-bin/aarch64/hello_go
+python3 src/elfscan.py --ui plain -m detailed test-bin/aarch64/hello_go
 ```
 
-Textual UI report (optional dependency):
+Interactive workspace:
 
 ```bash
-python3 -m pip install textual
-PYTHONPATH=src python3 src/elfscan.py --ui textual /home/kraken/Devel/littleOS/build/littleos.elf
+python3 src/elfscan.py
 ```
 
-Run full tests:
+Batch crawl + collection export:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 src/elfscan.py --crawl test-bin --export-collection-md reports/corpus.md
 ```
 
-High-verbosity corpus diagnostics:
+Task-file batch:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -vvvv
+python3 src/elfscan.py --task-file tasks.json --save-collection
 ```
 
-Check current project version:
+Version check:
 
 ```bash
 python3 src/elfscan.py --version
 ```
 
-Rebuild and sync hello corpus fixtures:
+## 19. External References
 
-```bash
-python3 build_hello.py --all
-```
-
-## 17. Research References
-
-The current heuristic expansion was informed by official/toolchain docs:
-- ELF file format and header semantics (`PT_INTERP`, `PT_DYNAMIC`, `DT_NEEDED`): https://man7.org/linux/man-pages/man5/elf.5.html
-- System V ABI ELF specification: https://refspecs.linuxfoundation.org/elf/gabi4+/contents.html
+- ELF man page: https://man7.org/linux/man-pages/man5/elf.5.html
+- System V ABI (ELF): https://refspecs.linuxfoundation.org/elf/gabi4+/contents.html
 - RP2040 datasheet: https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
-- CMSIS startup/vector conventions: https://arm-software.github.io/CMSIS_6/latest/Core/group__compiler__conntrol__gr.html
-- Textual framework documentation: https://textual.textualize.io/
+- CMSIS docs: https://arm-software.github.io/CMSIS_6/latest/Core/
+- Textual docs: https://textual.textualize.io/
 - FreeRTOS API reference: https://www.freertos.org/a00106.html
-- Zephyr kernel services documentation: https://docs.zephyrproject.org/latest/kernel/services/index.html
+- Zephyr kernel services: https://docs.zephyrproject.org/latest/kernel/services/index.html
 - Rust symbol mangling: https://doc.rust-lang.org/rustc/symbol-mangling/index.html
-- Go build IDs and ELF note behavior: https://pkg.go.dev/cmd/internal/buildid
-- GHC FFI runtime init (`hs_init`): https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/ffi.html
-- OCaml C interface/runtime startup (`caml_startup`): https://ocaml.org/manual/intfc.html
-- Julia embedding (`jl_init`, `jl_atexit_hook`): https://docs.julialang.org/en/v1/manual/embedding/
-- Lua C API reference: https://www.lua.org/manual/5.4/manual.html
-- NASM documentation: https://www.nasm.us/doc/
-- MASM reference: https://learn.microsoft.com/en-us/cpp/assembler/masm/microsoft-macro-assembler-reference
-- GNU objdump disassembly options: https://sourceware.org/binutils/docs/binutils/objdump.html
-- Cargo build output directories: https://doc.rust-lang.org/cargo/guide/build-cache.html
-- CMake build system conventions: https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html
-- Bazel output directories: https://bazel.build/remote/output-directories
-- Gradle directory layout: https://docs.gradle.org/current/userguide/directory_layout.html
+- Go build IDs: https://pkg.go.dev/cmd/internal/buildid
+- Cargo build cache layout: https://doc.rust-lang.org/cargo/guide/build-cache.html
+- CMake buildsystem docs: https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html
 
-## 18. Summary
+## 20. Closing Notes
 
-`ELFexplorer` is an evidence-driven ELF fingerprinting framework with:
-- broad multi-language heuristics
-- compiler attribution
-- architecture-diverse corpus regression
-- explicit, inspectable score reporting
+`ELFexplorer` is designed as a growing heuristic intelligence stack:
+- add evidence
+- calibrate weights
+- lock regressions with tests
+- expose rationale in reports
 
-The project is designed to be incrementally extensible: add new language/toolchain evidence, lock behavior with tests, and keep scoring rationale visible.
+The fastest path to better reliability is broad, labeled corpora across architectures/toolchains and strict regression gates on every heuristic change.

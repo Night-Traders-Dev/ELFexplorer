@@ -312,7 +312,7 @@ def _save_and_export_collection(reports, args):
         for report in reports:
             saved = save_report(report, path=None, store_dir=args.store_dir)
             print(f"Saved scan JSON: {saved}")
-    elif args.save_scan:
+    elif args.save_scan and len(reports) > 1:
         raise ValueError("Use --save-collection for multiple reports (or --save-scan with no path).")
 
     if args.export_collection_md:
@@ -481,6 +481,8 @@ def main():
             report = reports[0]
             _display_report(report, ui_mode=args.ui, explicit_ui=explicit_ui)
             _save_and_export_single(report, args)
+            if args.save_collection is not None or args.export_collection_md or args.export_collection_pdf:
+                _save_and_export_collection(reports, args)
             return 0
 
         _print_collection_summary(reports)
@@ -498,4 +500,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
