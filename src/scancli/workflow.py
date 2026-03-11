@@ -16,7 +16,7 @@ from reporting.persistence import (
 from reporting.tasks import run_task_file
 
 from .render import display_report, run_textual_workspace
-from .scan import build_scan_report, is_elf_file, report_timestamp
+from .scan import build_scan_report, is_supported_binary, report_timestamp
 
 
 def crawl_directory(directory, mode="general", recursive=True, max_files=None):
@@ -29,7 +29,7 @@ def crawl_directory(directory, mode="general", recursive=True, max_files=None):
     for path in paths:
         if not path.is_file():
             continue
-        if not is_elf_file(path):
+        if not is_supported_binary(path):
             continue
         reports.append(build_scan_report(str(path), mode=mode))
         if max_files is not None and len(reports) >= max_files:
@@ -156,4 +156,3 @@ def handle_no_input(args, explicit_ui):
     print("Provide a binary path, --crawl, --task-file, --load-scan, or --load-collection.")
     print("Use --help for all options.")
     return 2
-

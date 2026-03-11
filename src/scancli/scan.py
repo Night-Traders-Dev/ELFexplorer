@@ -12,6 +12,7 @@ from detect.elfdetect import (
     detect_source_language,
 )
 from info.elfinfo import print_detailed_info, print_general_info, print_important_info
+from uf2 import is_uf2_file, scan_uf2_file
 from version import get_version
 
 
@@ -67,21 +68,27 @@ def report_timestamp():
 
 def build_scan_report(filepath, mode="general"):
     input_path = Path(filepath).expanduser()
-    resolved_path = str(input_path.resolve()) if input_path.exists() else str(input_path)
+    if is_elf_file(input_path):
+        resolved_path = str(input_path.resolve()) if input_path.exists() else str(input_path)
 
-    with open(input_path, "rb") as handle:
-        elf = ELFFile(handle)
-        scan_result = scan_heuristics(elf)
-        metadata_text = render_metadata(elf, mode)
+        with open(input_path, "rb") as handle:
+            elf = ELFFile(handle)
+            scan_result = scan_heuristics(elf)
+            metadata_text = render_metadata(elf, mode)
 
-    return {
-        "file": resolved_path,
-        "mode": mode,
-        "version": get_version(),
-        "generated_at": report_timestamp(),
-        "scan_result": scan_result,
-        "metadata_text": metadata_text,
-    }
+        return {
+            "file": resolved_path,
+            "mode": mode,
+            "version": get_version(),
+            "generated_at": report_timestamp(),
+            "scan_result": scan_result,
+            "metadata_text": metadata_text,
+        }
+
+    if is_uf2_file(input_path):
+        return scan_uf2_file(input_path, mode=mode)
+
+    raise ValueError("Unsupported file format. Expected ELF or UF2.")
 
 
 def is_elf_file(path):
@@ -91,3 +98,6 @@ def is_elf_file(path):
     except Exception:
         return False
 
+
+def is_supported_binary(path):
+    return is_elf_file(path) or is_uf2_file(path)

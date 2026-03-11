@@ -25,7 +25,7 @@ def print_plain_report(report):
     scan_result = report["scan_result"]
     artifact_profile = scan_result["artifact_profile"]
 
-    print(rule("ELF Scan Report", FG_CYAN))
+    print(rule("Binary Scan Report", FG_CYAN))
     print_key_value("File", report.get("file", "Unknown"))
     print_key_value("Mode", report.get("mode", "general"))
     print_key_value("Version", report.get("version", get_version()), FG_MAGENTA)
@@ -70,10 +70,10 @@ def print_plain_report(report):
     print(f"{linkage_label} {artifact_profile.get('linkage_model', 'Unknown')}")
     print(f"{runtime_label} {artifact_profile.get('runtime', 'Unknown')}\n")
 
-    print(rule("ELF Metadata", FG_CYAN))
+    print(rule("Binary Metadata", FG_CYAN))
     print(report.get("metadata_text", "").rstrip())
     print()
-    print(styled("Completed ELF scan.", STYLE_DIM, FG_CYAN))
+    print(styled("Completed binary scan.", STYLE_DIM, FG_CYAN))
 
 
 def run_textual_report(report, explicit_ui=False):
@@ -125,4 +125,3 @@ def print_collection_summary(reports):
             f"artifact={artifact.get('artifact_type', 'Unknown')}"
         )
     print()
-

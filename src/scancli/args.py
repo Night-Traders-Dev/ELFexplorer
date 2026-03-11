@@ -4,13 +4,15 @@ from version import get_version
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="Analyze ELF files with heuristic profiling and UX modes.")
+    parser = argparse.ArgumentParser(
+        description="Analyze ELF and UF2 binaries with heuristic profiling and UX modes."
+    )
     parser.add_argument(
         "--version",
         action="version",
         version=f"ELFexplorer {get_version()}",
     )
-    parser.add_argument("filepath", nargs="?", help="Path to a single ELF file to analyze.")
+    parser.add_argument("filepath", nargs="?", help="Path to a single ELF/UF2 file to analyze.")
     parser.add_argument(
         "-m",
         "--mode",
@@ -24,7 +26,7 @@ def build_parser():
         default="textual",
         help="UI mode: textual (default) or plain.",
     )
-    parser.add_argument("--crawl", help="Recursively scan ELF files under a directory.")
+    parser.add_argument("--crawl", help="Recursively scan ELF/UF2 files under a directory.")
     parser.add_argument(
         "--no-recursive",
         action="store_true",
@@ -34,7 +36,7 @@ def build_parser():
         "--max-files",
         type=int,
         default=None,
-        help="Maximum number of ELF files to process during crawl.",
+        help="Maximum number of ELF/UF2 files to process during crawl.",
     )
     parser.add_argument("--task-file", help="Run scan tasks from a JSON task file.")
     parser.add_argument("--load-scan", help="Load a previously saved scan JSON report.")
@@ -69,4 +71,3 @@ def build_parser():
         help="For multiple reports, render each report instead of only a collection summary.",
     )
     return parser
-
