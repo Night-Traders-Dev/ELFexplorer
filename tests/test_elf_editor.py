@@ -138,6 +138,67 @@ class ElfBinaryEditorTests(unittest.TestCase):
         text = editor.disassemble(section=".text", max_lines=25)
         self.assertTrue(text.strip())
 
+    def test_section_for_offset_maps_known_section(self):
+        editor = self._editor_or_skip()
+        sections = editor.list_section_headers(resolve_names=True)
+        candidates = [
+            (index, section)
+            for index, section in enumerate(sections)
+            if int(section.get("sh_size", 0)) > 0
+            and int(section.get("sh_offset", 0)) < editor.file_size
+        ]
+        if not candidates:
+            self.skipTest("ELF sample has no section with file-backed bytes.")
+
+        index, section = candidates[0]
+        offset = int(section["sh_offset"])
+        mapped = editor.section_for_offset(offset)
+
+        self.assertIsNotNone(mapped)
+        self.assertEqual(mapped["index"], index)
+        self.assertEqual(mapped["offset"], offset)
+        self.assertEqual(mapped["size"], int(section["sh_size"]))
+
+    def test_file_offset_to_vaddr_uses_section_mapping(self):
+        editor = self._editor_or_skip()
+        sections = editor.list_section_headers(resolve_names=True)
+        candidates = [
+            section
+            for section in sections
+            if int(section.get("sh_size", 0)) > 0
+            and int(section.get("sh_addr", 0)) > 0
+            and int(section.get("sh_offset", 0)) < editor.file_size
+        ]
+        if not candidates:
+            self.skipTest("ELF sample has no section with mappable virtual address.")
+
+        section = candidates[0]
+        offset = int(section["sh_offset"])
+        expected = int(section["sh_addr"])
+        self.assertEqual(editor.file_offset_to_vaddr(offset), expected)
+
+    def test_file_range_to_vaddr_range_maps_contiguous_region(self):
+        editor = self._editor_or_skip()
+        sections = editor.list_section_headers(resolve_names=True)
+        candidates = [
+            section
+            for section in sections
+            if int(section.get("sh_size", 0)) >= 4
+            and int(section.get("sh_addr", 0)) > 0
+            and int(section.get("sh_offset", 0)) < editor.file_size
+        ]
+        if not candidates:
+            self.skipTest("ELF sample has no section suitable for range mapping.")
+
+        section = candidates[0]
+        offset = int(section["sh_offset"])
+        length = min(16, int(section["sh_size"]))
+        mapped = editor.file_range_to_vaddr_range(offset, length)
+
+        self.assertIsNotNone(mapped)
+        self.assertEqual(mapped[0], int(section["sh_addr"]))
+        self.assertEqual(mapped[1], int(section["sh_addr"]) + length)
+
 
 if __name__ == "__main__":
     unittest.main()

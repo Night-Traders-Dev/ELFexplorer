@@ -119,12 +119,14 @@ Outputs are available as:
   - interactive Textual workspace for scan/load/export workflows and advanced ELF edit mode
 - `src/ui/textual_editor.py`
   - dedicated split-pane editor workbench screen
-  - synchronized hex pane + disassembly pane + patch form
-  - in-app how-to and contextual hot tips
+  - interactive disassembler-style hex table (click selection + anchor/range behavior)
+  - synchronized raw-binary preview + disassembly highlighting for selected byte ranges
+  - patch form, in-app how-to, and contextual hot tips
 - `src/edit/elf_editor.py`
   - safe in-memory ELF editing backend
   - ELF/program/section header field mutation
   - disassembler-style hex dump rendering + byte patching
+  - file-offset to section / virtual-address mapping helpers
   - integrated disassembly via `objdump` backend
   - change tracking + revert + save
 - `src/reporting/persistence.py`
@@ -361,8 +363,9 @@ Edit mode is session-based:
 ### 11.2 Split-Pane Editor Workbench
 
 `edit-ui` opens a dedicated Textual editor screen composed of:
-- hex pane (left): byte stream visualization with offset/length/width controls
-- disassembly pane (right): section or address-range disassembly rendering
+- hex pane (left): interactive byte grid with click selection, selection length, and anchor-based range selection
+- raw binary preview (left): contextual bytes around selection with highlighted selected range
+- disassembly pane (right): section or address-range disassembly rendering with selected-range highlighting
 - patch form (bottom-left): byte poke, hex patch, ASCII patch, save, revert
 - workflow guide (bottom-middle): step-by-step operational how-to
 - hot tips panel (bottom-right): contextual guidance from hovered/focused controls
@@ -371,6 +374,11 @@ Keyboard actions in workbench:
 - `F5`: refresh hex + disassembly panes
 - `Ctrl+H`: refresh hex pane
 - `Ctrl+D`: refresh disassembly pane
+- `F6`: follow selected hex bytes in disassembly
+- `F7`: toggle selection anchor
+- `F8`: clear selection
+- `Ctrl+]`: expand selection length
+- `Ctrl+[` shrink selection length
 - `Ctrl+S`: save edited binary
 - `Ctrl+R`: revert in-memory edits
 - `Esc`: return to workspace

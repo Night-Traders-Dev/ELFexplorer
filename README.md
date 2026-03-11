@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.6.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,21 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.6.1
+
+- Reworked Textual split-pane editor with disassembler-style byte interaction:
+  - interactive clickable hex byte grid (cell selection)
+  - selection-range workflow with anchor mode (`Set Anchor` / `F7`)
+  - synchronized raw-binary preview with highlighted selected bytes
+  - disassembly highlight sync for mapped selection ranges
+  - `Follow Sel` workflow (`F6`) to auto-fill disassembly start/stop from file-offset selection
+  - selection sizing hotkeys (`Ctrl+]` expand, `Ctrl+[` shrink)
+- Added backend mapping helpers in `ElfBinaryEditor`:
+  - file offset -> section
+  - file offset -> virtual address
+  - file range -> virtual address range
+- Added regression tests for new mapping helpers in `tests/test_elf_editor.py`.
 
 ## What Changed in 0.6.0
 
@@ -115,8 +130,8 @@ Current false-positive guardrails include:
 - `src/settings.py`: JSON settings loader/saver
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
-- `src/ui/textual_editor.py`: split-pane Textual editor workbench (hex/disasm/patch/how-to/tips)
-- `src/edit/elf_editor.py`: safe in-memory ELF header editor + hex viewer backend
+- `src/ui/textual_editor.py`: split-pane Textual editor workbench (interactive hex selection, raw preview, synchronized disassembly highlighting)
+- `src/edit/elf_editor.py`: safe in-memory ELF header editor + disassembler-aligned file-offset/VA mapping utilities
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
 - `src/reporting/export.py`: Markdown/PDF export helpers
 - `src/reporting/tasks.py`: task-file batch runner (`scan` + `crawl`)
@@ -227,7 +242,7 @@ edit-ui
 ```
 
 Workbench layout:
-- left: hex pane + hex range controls
+- left: interactive hex pane + raw binary preview + selection controls
 - right: disassembly pane + section/range controls
 - bottom-left: patch form (poke/hex/ascii/save/revert)
 - bottom-middle: in-app step-by-step how-to
@@ -237,6 +252,11 @@ Hotkeys inside workbench:
 - `F5`: refresh hex + disassembly
 - `Ctrl+H`: refresh hex
 - `Ctrl+D`: refresh disassembly
+- `F6`: follow current byte selection in disassembly
+- `F7`: toggle selection anchor (for click-range selection)
+- `F8`: clear selection
+- `Ctrl+]`: expand selection length
+- `Ctrl+[` shrink selection length
 - `Ctrl+S`: save
 - `Ctrl+R`: revert all in-memory edits
 - `Esc`: return to workspace

@@ -515,6 +515,62 @@ class ElfBinaryEditor:
             for index in range(header["e_shnum"])
         ]
 
+    def section_for_offset(self, offset):
+        offset = int(offset)
+        if offset < 0 or offset >= len(self._data):
+            return None
+
+        for index, section in enumerate(self.list_section_headers(resolve_names=True)):
+            sh_offset = int(section.get("sh_offset", 0))
+            sh_size = int(section.get("sh_size", 0))
+            if sh_size <= 0:
+                continue
+            if sh_offset <= offset < (sh_offset + sh_size):
+                return {
+                    "index": index,
+                    "name": section.get("name", "<unnamed>"),
+                    "offset": sh_offset,
+                    "size": sh_size,
+                    "address": int(section.get("sh_addr", 0)),
+                }
+        return None
+
+    def file_offset_to_vaddr(self, offset):
+        offset = int(offset)
+        if offset < 0 or offset >= len(self._data):
+            return None
+
+        section = self.section_for_offset(offset)
+        if section and section["address"] > 0:
+            return section["address"] + (offset - section["offset"])
+
+        for header in self.list_program_headers():
+            p_type = int(header.get("p_type", 0))
+            p_offset = int(header.get("p_offset", 0))
+            p_filesz = int(header.get("p_filesz", 0))
+            p_vaddr = int(header.get("p_vaddr", 0))
+            if p_type != 1 or p_filesz <= 0:
+                continue
+            if p_offset <= offset < (p_offset + p_filesz):
+                return p_vaddr + (offset - p_offset)
+        return None
+
+    def file_range_to_vaddr_range(self, offset, length):
+        offset = int(offset)
+        length = int(length)
+        if offset < 0 or length <= 0:
+            return None
+        if offset >= len(self._data):
+            return None
+        end_offset = min(len(self._data), offset + length) - 1
+        start_vaddr = self.file_offset_to_vaddr(offset)
+        end_vaddr = self.file_offset_to_vaddr(end_offset)
+        if start_vaddr is None or end_vaddr is None:
+            return None
+        if end_vaddr < start_vaddr:
+            return None
+        return start_vaddr, end_vaddr + 1
+
     def read_bytes(self, offset, length):
         offset, length = self._require_range(offset, length)
         return bytes(self._data[offset : offset + length])
