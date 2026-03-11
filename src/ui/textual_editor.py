@@ -17,7 +17,7 @@ class EditorWorkbenchScreen:
     @staticmethod
     def build(editor: ElfBinaryEditor):
         from textual.screen import Screen
-        from textual.widgets import Button, Footer, Input, Static
+        from textual.widgets import Button, Footer, Input, RichLog, Static
         from textual.containers import Horizontal, Vertical, VerticalScroll
 
         class _EditorWorkbenchScreen(Screen):
@@ -48,13 +48,10 @@ class EditorWorkbenchScreen:
                 text-style: bold;
                 color: $accent;
             }
-            #wb_hex_scroll, #wb_disasm_scroll {
+            #wb_hex_output, #wb_disasm_output {
                 height: 1fr;
                 border-top: solid $panel;
                 border-bottom: solid $panel;
-            }
-            #wb_hex_output, #wb_disasm_output {
-                padding: 0 1;
             }
             #wb_hex_controls, #wb_disasm_controls {
                 height: auto;
@@ -66,7 +63,7 @@ class EditorWorkbenchScreen:
                 margin-right: 1;
             }
             #wb_bottom {
-                height: 22;
+                height: 1fr;
                 margin-top: 1;
             }
             #wb_patch_col, #wb_howto_col, #wb_tips_col {
@@ -80,6 +77,9 @@ class EditorWorkbenchScreen:
             }
             #wb_patch_col Input {
                 margin-bottom: 1;
+            }
+            #wb_patch_scroll {
+                height: 1fr;
             }
             #wb_patch_buttons {
                 height: auto;
@@ -106,8 +106,8 @@ class EditorWorkbenchScreen:
             ]
 
             HOT_TIPS = {
-                "wb_hex_scroll": "Hex pane: review the current byte stream with offset + ASCII columns.",
-                "wb_disasm_scroll": "Disassembly pane: objdump-based assembly view of selected section/range.",
+                "wb_hex_output": "Hex pane: review the current byte stream with offset + ASCII columns.",
+                "wb_disasm_output": "Disassembly pane: objdump-based assembly view of selected section/range.",
                 "wb_hex_offset": "Hex offset in decimal or hex (e.g. 256 or 0x100).",
                 "wb_hex_length": "Hex length controls how many bytes are shown.",
                 "wb_hex_width": "Hex width is bytes per row (usually 8/16/32).",
@@ -127,19 +127,26 @@ class EditorWorkbenchScreen:
                 "wb_btn_patch_ascii": "Apply ASCII text patch at patch offset.",
                 "wb_btn_save": "Save edited binary to output path or default .modified file.",
                 "wb_btn_revert": "Discard all pending in-memory changes and restore original bytes.",
+                "wb_patch_scroll": "Patch form scroll area. Scroll down for Save/Revert on smaller screens.",
             }
 
             HOWTO_TEXT = """
 [bold]Workbench How-To[/bold]
 
-1. Set hex controls (`offset`, `length`, `width`) and press [bold]Refresh Hex[/bold].
-2. Set disassembly controls (`section`, `max_lines`, optional `start/stop`) and press [bold]Refresh Disasm[/bold].
+1. Open with `edit-ui` (workspace) or press `e` in report mode.
+2. Set hex controls (`offset`, `length`, `width`) and press [bold]Refresh Hex[/bold].
 3. Apply changes from the patch form:
    - [bold]Poke Byte[/bold]: one byte at patch offset.
    - [bold]Patch Hex[/bold]: sequence of bytes at patch offset.
    - [bold]Patch ASCII[/bold]: text bytes at patch offset.
-4. Inspect result in hex/disassembly panes, then [bold]Save[/bold].
-5. Use [bold]Revert[/bold] to reset all in-memory changes.
+4. Set disassembly controls (`section`, `max_lines`, optional `start/stop`) and press [bold]Refresh Disasm[/bold].
+5. Inspect result in hex/disassembly panes, then [bold]Save[/bold].
+6. Use [bold]Revert[/bold] to reset all in-memory changes.
+
+[bold]Scrolling and Navigation[/bold]
+- Hex and disassembly panes are scrollable with mouse wheel or keyboard focus.
+- Patch form is scrollable when the screen height is limited.
+- Hover controls for tooltip guidance, and watch Hot Tips for live context.
 
 [bold]Keyboard[/bold]
 - [bold]F5[/bold]: refresh all panes
@@ -160,8 +167,13 @@ class EditorWorkbenchScreen:
                 with Horizontal(id="wb_main"):
                     with Vertical(id="wb_hex_col"):
                         yield Static("Hex Pane", classes="pane_title")
-                        with VerticalScroll(id="wb_hex_scroll"):
-                            yield Static("", id="wb_hex_output")
+                        yield RichLog(
+                            id="wb_hex_output",
+                            wrap=False,
+                            markup=False,
+                            auto_scroll=False,
+                            highlight=False,
+                        )
                         with Horizontal(id="wb_hex_controls"):
                             yield Input(value="0x0", placeholder="offset", id="wb_hex_offset")
                             yield Input(value="0x100", placeholder="length", id="wb_hex_length")
@@ -169,8 +181,13 @@ class EditorWorkbenchScreen:
                             yield Button("Refresh Hex", id="wb_btn_refresh_hex", variant="primary")
                     with Vertical(id="wb_disasm_col"):
                         yield Static("Disassembly Pane", classes="pane_title")
-                        with VerticalScroll(id="wb_disasm_scroll"):
-                            yield Static("", id="wb_disasm_output")
+                        yield RichLog(
+                            id="wb_disasm_output",
+                            wrap=False,
+                            markup=False,
+                            auto_scroll=False,
+                            highlight=False,
+                        )
                         with Horizontal(id="wb_disasm_controls"):
                             yield Input(value=".text", placeholder="section", id="wb_disasm_section")
                             yield Input(value="120", placeholder="max lines", id="wb_disasm_max_lines")
@@ -181,25 +198,26 @@ class EditorWorkbenchScreen:
                 with Horizontal(id="wb_bottom"):
                     with Vertical(id="wb_patch_col"):
                         yield Static("Patch Form", classes="pane_title")
-                        yield Input(value="0x0", placeholder="patch offset", id="wb_patch_offset")
-                        yield Input(value="0x90", placeholder="poke byte", id="wb_poke_value")
-                        yield Button("Poke Byte", id="wb_btn_poke", variant="warning")
-                        yield Input(
-                            value="de ad be ef",
-                            placeholder="hex patch bytes",
-                            id="wb_patch_hex_value",
-                        )
-                        yield Button("Patch Hex", id="wb_btn_patch_hex", variant="warning")
-                        yield Input(
-                            value="",
-                            placeholder="ascii patch text",
-                            id="wb_patch_ascii_value",
-                        )
-                        yield Button("Patch ASCII", id="wb_btn_patch_ascii", variant="warning")
-                        yield Input(value="", placeholder="save path", id="wb_save_path")
-                        with Horizontal(id="wb_patch_buttons"):
-                            yield Button("Save", id="wb_btn_save", variant="success")
-                            yield Button("Revert", id="wb_btn_revert", variant="error")
+                        with VerticalScroll(id="wb_patch_scroll"):
+                            yield Input(value="0x0", placeholder="patch offset", id="wb_patch_offset")
+                            yield Input(value="0x90", placeholder="poke byte", id="wb_poke_value")
+                            yield Button("Poke Byte", id="wb_btn_poke", variant="warning")
+                            yield Input(
+                                value="de ad be ef",
+                                placeholder="hex patch bytes",
+                                id="wb_patch_hex_value",
+                            )
+                            yield Button("Patch Hex", id="wb_btn_patch_hex", variant="warning")
+                            yield Input(
+                                value="",
+                                placeholder="ascii patch text",
+                                id="wb_patch_ascii_value",
+                            )
+                            yield Button("Patch ASCII", id="wb_btn_patch_ascii", variant="warning")
+                            yield Input(value="", placeholder="save path", id="wb_save_path")
+                            with Horizontal(id="wb_patch_buttons"):
+                                yield Button("Save", id="wb_btn_save", variant="success")
+                                yield Button("Revert", id="wb_btn_revert", variant="error")
 
                     with Vertical(id="wb_howto_col"):
                         yield Static("How-To", classes="pane_title")
@@ -242,7 +260,10 @@ class EditorWorkbenchScreen:
                 width = _parse_int_literal(self._input_value("wb_hex_width"), "hex width")
                 text = self.editor.hex_view(offset=offset, length=length, width=width)
                 rendered = text if text else "No bytes to display for this range."
-                self.query_one("#wb_hex_output", Static).update(rendered)
+                output = self.query_one("#wb_hex_output", RichLog)
+                output.clear()
+                for line in rendered.splitlines():
+                    output.write(line)
                 self._set_hot_tip(
                     f"Hex refreshed: offset=0x{offset:x}, length={length}, width={width}."
                 )
@@ -264,7 +285,10 @@ class EditorWorkbenchScreen:
                     start_address=start_address,
                     stop_address=stop_address,
                 )
-                self.query_one("#wb_disasm_output", Static).update(text)
+                output = self.query_one("#wb_disasm_output", RichLog)
+                output.clear()
+                for line in text.splitlines():
+                    output.write(line)
                 msg = f"Disassembly refreshed: section={section}, max_lines={max_lines}."
                 if start_address is not None and stop_address is not None:
                     msg = (
