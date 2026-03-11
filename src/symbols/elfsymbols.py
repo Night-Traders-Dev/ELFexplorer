@@ -106,6 +106,9 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
     go_symbol_fingerprint_count = 0
     c_source_file_count = 0
     cpp_source_file_count = 0
+    kotlin_native_symbol_count = 0
+    pascal_symbol_count = 0
+    crystal_symbol_count = 0
 
     for symbol in symbol_iter:
         name = symbol.name.lower()
@@ -153,6 +156,32 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             scores["Dart"] += 3
         if name.startswith("dart") and ("isolate" in name or "snapshot" in name):
             scores["Dart"] += 2
+
+        if (
+            "kotlin.root." in name
+            or "kref_kotlin_" in name
+            or "kotlin_initruntimeifneeded" in name
+            or "disposestablepointer" in name
+            or "disposestring" in name
+            or name.startswith("konan_")
+        ):
+            kotlin_native_symbol_count += 1
+            scores["Kotlin/Native"] += 3
+
+        if (
+            name.startswith("fpc_")
+            or name.startswith("__fpc_")
+            or "fpc_initializeunits" in name
+            or "fpc_finalizeunits" in name
+            or "pascalmain" in name
+            or "system_$$_" in name
+        ):
+            pascal_symbol_count += 1
+            scores["Pascal"] += 3
+
+        if "__crystal_main" in name or name.startswith("crystal_") or "crystal::" in name:
+            crystal_symbol_count += 1
+            scores["Crystal"] += 3
 
         if name.startswith("__zig_") or name.startswith("zig_") or "ziglang" in name:
             scores["Zig"] += 3
@@ -245,3 +274,18 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
 
         if len(sage_cluster_hits) >= 3:
             scores["SageLang"] += 6
+
+    if kotlin_native_symbol_count >= 8:
+        scores["Kotlin/Native"] += 8
+    elif kotlin_native_symbol_count >= 3:
+        scores["Kotlin/Native"] += 4
+
+    if pascal_symbol_count >= 6:
+        scores["Pascal"] += 8
+    elif pascal_symbol_count >= 2:
+        scores["Pascal"] += 4
+
+    if crystal_symbol_count >= 6:
+        scores["Crystal"] += 8
+    elif crystal_symbol_count >= 2:
+        scores["Crystal"] += 4

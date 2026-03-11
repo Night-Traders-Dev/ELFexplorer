@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.4.0` (see `VERSION`).
+Current release: `0.5.0` (see `VERSION`).
 
 ## 2. Analysis Layers
 
@@ -39,6 +39,7 @@ Evidence classes:
 - note sections (`.note.*`)
 - compiler/build comments (`.comment`)
 - debug strings (`.debug_str`, string-bearing sections)
+- DWARF compile-unit metadata (`DW_AT_language`, `DW_AT_producer`, `DW_AT_comp_dir`, `DW_AT_name`)
 - runtime library dependencies
 - architecture-specific text-pattern checks
 
@@ -95,6 +96,8 @@ Outputs are available as:
   - Markdown/PDF formatting and export
 - `src/reporting/tasks.py`
   - JSON task-file runner for batch operations
+- `install_deps.py`
+  - dependency installer with profile/group modes (`core`, `runtime`, `all`)
 - `tests/`
   - corpus integration and focused heuristic unit tests
 
@@ -127,7 +130,7 @@ Example dimensions:
 ## 5. Language Detection Coverage
 
 Current labels:
-- `ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
+- `ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
 
 ### 5.1 High-value language cues
 
@@ -137,6 +140,9 @@ Current labels:
 - Rust: `rust_*`, panic/unwind/runtime markers, mangling patterns
 - Go: `go.*` runtime/program symbols, `.note.go.buildid`, runtime graph markers
 - Dart: `Dart_*` APIs and runtime symbols
+- Kotlin/Native: exported-symbol conventions (`ExportedSymbols`, `DisposeStablePointer`, `DisposeString`, Kotlin root symbols) and DWARF Kotlin language tags
+- Pascal: FreePascal-style `fpc_*` runtime markers and Pascal DWARF language tags
+- Crystal: Crystal runtime entry patterns and DWARF Crystal language tags
 - Nim/Zig: runtime/toolchain symbol and comment markers
 - C#: explicit CLR/Mono host/runtime markers
 - SageLang: generated C pattern (`sagec_<n>.c`) + Sage runtime clusters with anchor checks
@@ -144,7 +150,7 @@ Current labels:
 ## 6. Compiler/Assembler Detection Coverage
 
 Current labels:
-- `GCC`, `Clang`, `Rustc`, `Go gc`, `Zig`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
+- `GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
 
 Evidence sources:
 - `.comment`
@@ -158,10 +164,11 @@ Assembler family detection for ELF currently recognizes NASM/FASM/MASM/TASM mark
 ## 7. Build-System Detection Coverage
 
 Current labels:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Ambiguous: ...`, `Unknown`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Ambiguous: ...`, `Unknown`
 
 Evidence sources:
 - path fragments in debug strings
+- DWARF compile-unit paths (`DW_AT_comp_dir`, `DW_AT_name`)
 - section/note markers
 - runtime and dependency hints
 - artifact-context biasing (for example, firmware + Pico markers)
@@ -344,6 +351,13 @@ Covers:
 - PDF export behavior
 - task-file orchestration
 
+### 14.4 Dependency Installer tests (`tests/test_install_deps.py`)
+
+Covers:
+- profile/group package resolution
+- pip command construction
+- dry-run and group-list output behavior
+
 Run all tests:
 
 ```bash
@@ -365,31 +379,27 @@ High-impact additions for better accuracy:
 ### 16.1 Languages
 
 Recommended next additions:
-- `Kotlin/Native`
-- `Crystal`
 - `V`
-- `Pascal/FreePascal`
+- `Nim` + `Zig` deep corpus on all architectures
+- `Kotlin/Native` + `Crystal` corpus fixtures on x86_64/aarch64
+- `Pascal/FreePascal` corpus fixtures
 - stronger multi-arch corpus coverage for existing `Nim`, `Zig`, `SageLang`, `C#`
 
 ### 16.2 Compilers/toolchains
 
 Recommended next additions:
-- `ICC/ICX`
-- `TinyCC`
-- `LDC`/`GDC`
+- `PCC`
+- `DMD`
+- `GNU as`/`YASM` explicit compiler bucket split
 - split `GNU as` vs generic GCC pipelines where evidence allows
 
 ### 16.3 Build systems
 
 Recommended next additions:
-- `Buildroot`
-- `Yocto`
 - `QMake`
 - `Waf`
 - `Premake`
-- `PlatformIO`
-- `ESP-IDF (idf.py)`
-- `Zephyr west`
+- richer `BSP/SDK` attribution layered on top of `Buildroot`/`Yocto` detection
 
 ## 17. Versioning and Documentation Policy
 
@@ -438,6 +448,14 @@ Task-file batch:
 python3 src/elfscan.py --task-file tasks.json --save-collection
 ```
 
+Install dependencies:
+
+```bash
+python3 install_deps.py --profile runtime
+python3 install_deps.py --profile all --upgrade
+python3 install_deps.py --print-groups
+```
+
 Version check:
 
 ```bash
@@ -457,6 +475,18 @@ python3 src/elfscan.py --version
 - Go build IDs: https://pkg.go.dev/cmd/internal/buildid
 - Cargo build cache layout: https://doc.rust-lang.org/cargo/guide/build-cache.html
 - CMake buildsystem docs: https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html
+- GCC `-frecord-gcc-switches` (`.GCC.command.line`): https://gcc.gnu.org/onlinedocs/gcc-4.3.2/gcc/Code-Gen-Options.html
+- DWARF language table (`DW_LANG_*`, including Kotlin and Crystal): https://dwarfstd.org/languages-v6.html
+- Kotlin/Native exported symbol conventions: https://kotlinlang.org/docs/native-dynamic-libraries.html
+- Buildroot output directory structure (`output/build`, `output/host`): https://buildroot.org/downloads/manual/manual.html
+- Yocto build/work tree (`tmp/work`): https://docs.yoctoproject.org/2.5.2/ref-manual/ref-manual.html
+- PlatformIO workspace/build directory defaults: https://docs.platformio.org/en/latest/projectconf/sections/platformio/options/directory/build_dir.html
+- ESP-IDF build system and `idf.py build`: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html
+- Zephyr `west build` workflow: https://docs.zephyrproject.org/latest/develop/west/build-flash-debug.html
+- TinyCC reference/docs: https://bellard.org/tcc/tcc-doc.html
+- GDC manual: https://gcc.gnu.org/onlinedocs/gdc/
+- Intel oneAPI `icx` docs: https://www.intel.com/content/www/us/en/docs/dpcpp-cpp-compiler/developer-guide-reference/current/compiler-reference.html
+- LDC project README (`ldc2` compiler): https://github.com/ldc-developers/ldc
 
 ## 20. Closing Notes
 

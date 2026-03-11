@@ -26,7 +26,7 @@ def _fake_report(path="/tmp/hello_c"):
     return {
         "file": path,
         "mode": "general",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "generated_at": "2026-03-11T00:00:00Z",
         "scan_result": {
             "source_language": "C",

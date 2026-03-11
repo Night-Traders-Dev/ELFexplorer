@@ -8,6 +8,9 @@ SUPPORTED_LANGUAGES = (
     "Rust",
     "Go",
     "Dart",
+    "Kotlin/Native",
+    "Pascal",
+    "Crystal",
     "D",
     "Ada",
     "Fortran",
@@ -28,6 +31,8 @@ NOTE_SECTIONS = {
     ".note.rustc": "Rust",
     ".note.dmd": "D",
     ".note.nim": "Nim",
+    ".note.kotlin.native": "Kotlin/Native",
+    ".note.crystal": "Crystal",
     ".note.swift": "Swift",
     ".note.java": "Java",
     ".note.python": "Python",
@@ -51,6 +56,11 @@ BUILD_SYSTEM_HEURISTICS = (
     "Dart/Flutter",
     "Zig Build",
     "Pico SDK",
+    "Buildroot",
+    "Yocto/OpenEmbedded",
+    "PlatformIO",
+    "ESP-IDF",
+    "Zephyr West",
 )
 
 ARTIFACT_HEURISTICS = (
@@ -143,6 +153,31 @@ NIM_STRING_MARKERS = (
     b"nimcache",
 )
 
+KOTLIN_NATIVE_STRING_MARKERS = (
+    b"kotlin/native",
+    b"exportedsymbols",
+    b"disposestablepointer",
+    b"disposestring",
+    b"kref_kotlin_",
+    b"kotlin.root.",
+    b"kotlin_initruntimeifneeded",
+)
+
+PASCAL_STRING_MARKERS = (
+    b"freepascal",
+    b"fpc_initializeunits",
+    b"fpc_finalizeunits",
+    b"fpc_do_exit",
+    b"fpc_",
+)
+
+CRYSTAL_STRING_MARKERS = (
+    b"crystal",
+    b"__crystal_main",
+    b"crystal_main",
+    b"crystal_gc",
+)
+
 ZIG_STRING_MARKERS = (
     b"ziglang",
     b"__zig_",
@@ -182,9 +217,13 @@ LUA_STRING_MARKERS = (
 COMPILER_HEURISTICS = (
     "GCC",
     "Clang",
+    "Intel ICC/ICX",
+    "TinyCC",
     "Rustc",
     "Go gc",
     "Zig",
+    "LDC",
+    "GDC",
     "NASM",
     "FASM",
     "MASM",
@@ -209,6 +248,21 @@ COMPILER_GCC_STRING_MARKERS = (
     b"gnu c++",
     b"collect2",
     b" cc1",
+    b"-frecord-gcc-switches",
+)
+
+COMPILER_INTEL_STRING_MARKERS = (
+    b"intel(r) oneapi dpc++/c++ compiler",
+    b"intel c++ compiler",
+    b" icx",
+    b" icpx",
+    b" icc",
+)
+
+COMPILER_TINYCC_STRING_MARKERS = (
+    b"tiny c compiler",
+    b"tinycc",
+    b" tcc ",
 )
 
 COMPILER_RUSTC_STRING_MARKERS = (
@@ -227,6 +281,17 @@ COMPILER_ZIG_STRING_MARKERS = (
     b"ziglang",
     b"zig ",
     b"__zig_",
+)
+
+COMPILER_LDC_STRING_MARKERS = (
+    b"ldc - the llvm-based d compiler",
+    b"ldc2",
+)
+
+COMPILER_GDC_STRING_MARKERS = (
+    b"gnu d compiler",
+    b"gdc",
+    b"libphobos",
 )
 
 COMPILER_GHC_STRING_MARKERS = (
@@ -278,6 +343,18 @@ COMPILER_GCC_SYMBOL_MARKERS = (
     "__gcov_merge_single",
 )
 
+COMPILER_INTEL_SYMBOL_MARKERS = (
+    "__intel_cpu_features_init",
+    "__intel_new_feature_proc_init",
+    "__intel_sse2_strcpy",
+)
+
+COMPILER_TINYCC_SYMBOL_MARKERS = (
+    "__bound_ptr_add",
+    "__bound_ptr_indir1",
+    "__bound_ptr_indir4",
+)
+
 COMPILER_RUSTC_SYMBOL_MARKERS = (
     "rust_eh_personality",
     "__rust_alloc",
@@ -295,6 +372,16 @@ COMPILER_ZIG_SYMBOL_MARKERS = (
     "__zig_probe_stack",
     "__zig_return_error",
     "zig_panic",
+)
+
+COMPILER_LDC_SYMBOL_MARKERS = (
+    "ldc.register_dso",
+    "__ldc_",
+)
+
+COMPILER_GDC_SYMBOL_MARKERS = (
+    "_d_dso_registry",
+    "__gdc_",
 )
 
 COMPILER_GHC_SYMBOL_MARKERS = (
@@ -407,6 +494,35 @@ BUILD_SYSTEM_MARKERS = {
         b"/pico-sdk/",
         b"pico_platform",
         b"hardware_regs/include/hardware/regs",
+    ),
+    "Buildroot": (
+        b"output/build/",
+        b"output/host/",
+        b"buildroot",
+    ),
+    "Yocto/OpenEmbedded": (
+        b"tmp/work/",
+        b"tmp/work-shared/",
+        b"poky",
+        b"openembedded",
+    ),
+    "PlatformIO": (
+        b"platformio.ini",
+        b"/.pio/",
+        b"platformio",
+        b"workspace_dir/build",
+    ),
+    "ESP-IDF": (
+        b"idf.py",
+        b"esp-idf",
+        b"build/bootloader",
+        b"esptool.py",
+    ),
+    "Zephyr West": (
+        b"west build",
+        b".west/",
+        b"zephyr.elf",
+        b"zephyrproject",
     ),
 }
 

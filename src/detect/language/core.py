@@ -3,6 +3,7 @@ from detect.constants import SUPPORTED_LANGUAGES
 from detect.techniques.language import (
     apply_artifact_language_bias,
     score_comment_section,
+    score_dwarf_language_attributes,
     score_debug_info,
     score_dynamic_section,
     score_general_language_strings,
@@ -29,6 +30,7 @@ def detect_source_language(elf, artifact_profile=None, emit_report=True, return_
     score_general_language_strings(elf, scores)
     score_sagelang_strings(elf, scores)
     score_debug_info(elf, scores)
+    score_dwarf_language_attributes(elf, scores)
     score_section_names(elf, scores)
     score_asm_patterns(elf, symtab, dynsym, scores)
     score_disassembly_patterns(elf, scores)

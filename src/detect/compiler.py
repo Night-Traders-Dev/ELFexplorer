@@ -15,7 +15,7 @@ def _is_c_family_language(source_language):
         return True
     if source_language.startswith("Ambiguous:"):
         return True
-    return source_language in {"ASM", "C", "C++", "Unknown"}
+    return source_language in {"ASM", "C", "C++", "Pascal", "Unknown"}
 
 
 def _has_explicit_compiler_banner(elf):
@@ -39,12 +39,15 @@ def _allowed_compilers_for_language(source_language):
         return None
 
     language_compiler_map = {
-        "ASM": {"GCC", "Clang", "Zig", "NASM", "FASM", "MASM", "TASM"},
-        "C": {"GCC", "Clang", "Zig"},
-        "C++": {"GCC", "Clang", "Zig"},
+        "ASM": {"GCC", "Clang", "Intel ICC/ICX", "Zig", "NASM", "FASM", "MASM", "TASM"},
+        "C": {"GCC", "Clang", "Intel ICC/ICX", "TinyCC", "Zig"},
+        "C++": {"GCC", "Clang", "Intel ICC/ICX", "TinyCC", "Zig"},
+        "D": {"LDC", "GDC"},
         "Rust": {"Rustc"},
         "Go": {"Go gc"},
         "Zig": {"Zig"},
+        "Kotlin/Native": {"Clang"},
+        "Crystal": {"Clang", "GCC"},
         "Haskell": {"GHC"},
         "OCaml": {"OCamlopt"},
     }

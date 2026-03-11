@@ -115,24 +115,35 @@ class FakeDwarfAttribute:
 
 
 class FakeTopDIE:
-    def __init__(self, producer):
-        self.attributes = {"DW_AT_producer": FakeDwarfAttribute(producer)}
+    def __init__(self, producer=None, attributes=None):
+        attrs = dict(attributes or {})
+        if producer is not None:
+            attrs["DW_AT_producer"] = producer
+        self.attributes = {
+            key: value if isinstance(value, FakeDwarfAttribute) else FakeDwarfAttribute(value)
+            for key, value in attrs.items()
+        }
 
 
 class FakeCU:
-    def __init__(self, producer):
+    def __init__(self, producer=None, attributes=None):
         self._producer = producer
+        self._attributes = dict(attributes or {})
 
     def get_top_DIE(self):
-        return FakeTopDIE(self._producer)
+        return FakeTopDIE(producer=self._producer, attributes=self._attributes)
 
 
 class FakeDwarfInfo:
-    def __init__(self, producers):
-        self._producers = list(producers)
+    def __init__(self, producers=None, cus=None):
+        self._producers = list(producers or [])
+        self._cus = list(cus or [])
 
     def iter_CUs(self):
-        return iter(FakeCU(producer) for producer in self._producers)
+        cu_list = [FakeCU(producer=producer) for producer in self._producers]
+        for attrs in self._cus:
+            cu_list.append(FakeCU(attributes=attrs))
+        return iter(cu_list)
 
 
 class HeuristicDetectionTests(unittest.TestCase):
@@ -183,6 +194,29 @@ class HeuristicDetectionTests(unittest.TestCase):
             ]
         )
         self.assertEqual(self.detect_language(elf), "Dart")
+
+    def test_detects_kotlin_native_from_runtime_symbols(self):
+        elf = FakeELF(
+            [
+                FakeSection(
+                    ".dynsym",
+                    symbols=[
+                        FakeSymbol("libnative_ExportedSymbols"),
+                        FakeSymbol("DisposeStablePointer"),
+                        FakeSymbol("kotlin_root_foo"),
+                    ],
+                )
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "Kotlin/Native")
+
+    def test_detects_pascal_from_dwarf_language_code(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_language": 0x0009}]))
+        self.assertEqual(self.detect_language(elf), "Pascal")
+
+    def test_detects_crystal_from_dwarf_language_code(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_language": 0x0028}]))
+        self.assertEqual(self.detect_language(elf), "Crystal")
 
     def test_detects_csharp_from_runtime_libraries(self):
         elf = FakeELF(
@@ -260,6 +294,22 @@ class HeuristicDetectionTests(unittest.TestCase):
         elf = FakeELF([FakeSection(".symtab", symbols=[FakeSymbol("__clang_call_terminate")])])
         self.assertEqual(self.detect_compiler_name(elf), "Clang")
 
+    def test_detects_tinycc_compiler_from_comment(self):
+        elf = FakeELF([FakeSection(".comment", data=b"Tiny C Compiler 0.9.27")])
+        self.assertEqual(self.detect_compiler_name(elf, source_language="C"), "TinyCC")
+
+    def test_detects_intel_compiler_from_dwarf_producer(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"Intel(R) oneAPI DPC++/C++ Compiler"]))
+        self.assertEqual(self.detect_compiler_name(elf, source_language="C++"), "Intel ICC/ICX")
+
+    def test_detects_ldc_compiler_from_dwarf_producer(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"LDC - the LLVM-based D compiler"]))
+        self.assertEqual(self.detect_compiler_name(elf, source_language="D"), "LDC")
+
+    def test_detects_gdc_compiler_from_dwarf_producer(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"GNU D Compiler (GDC) 14.1"]))
+        self.assertEqual(self.detect_compiler_name(elf, source_language="D"), "GDC")
+
     def test_detects_clang_compiler_from_dwarf_producer(self):
         elf = FakeELF([], dwarf_info=FakeDwarfInfo([b"clang version 18.1.2"]))
         self.assertEqual(self.detect_compiler_name(elf), "Clang")
@@ -307,6 +357,41 @@ class HeuristicDetectionTests(unittest.TestCase):
     def test_detects_build_system_go_toolchain_from_note(self):
         elf = FakeELF([FakeSection(".note.go.buildid")])
         self.assertEqual(self.detect_build_system_name(elf), "Go Toolchain")
+
+    def test_detects_build_system_buildroot_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/home/buildroot/output/build/app-1.0"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Buildroot")
+
+    def test_detects_build_system_yocto_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/work/poky/build/tmp/work/cortexa7/app"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Yocto/OpenEmbedded")
+
+    def test_detects_build_system_platformio_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/workspace/.pio/build/esp32dev"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "PlatformIO")
+
+    def test_detects_build_system_esp_idf_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/opt/esp-idf/components/esp_system"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "ESP-IDF")
+
+    def test_detects_build_system_zephyr_west_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/work/.west/zephyrproject/zephyr/build"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Zephyr West")
 
     def test_runtime_c_file_symbol_does_not_trigger_go(self):
         elf = FakeELF(

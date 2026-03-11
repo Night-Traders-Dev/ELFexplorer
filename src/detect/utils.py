@@ -53,3 +53,26 @@ def iter_dynamic_needed(dynamic_section):
     except Exception as exc:
         print(f"Error processing dynamic section: {exc}")
         return
+
+
+def iter_dwarf_top_die_attributes(elf):
+    try:
+        has_dwarf_info = getattr(elf, "has_dwarf_info", None)
+        if not callable(has_dwarf_info) or not elf.has_dwarf_info():
+            return
+
+        dwarf_info = elf.get_dwarf_info()
+        for compile_unit in dwarf_info.iter_CUs():
+            top_die = compile_unit.get_top_DIE()
+            if not top_die:
+                continue
+            yield top_die.attributes
+    except Exception as exc:
+        print(f"Error reading DWARF info: {exc}")
+        return
+
+
+def normalize_dwarf_attr_value(value):
+    if isinstance(value, bytes):
+        return value.decode(errors="ignore")
+    return value

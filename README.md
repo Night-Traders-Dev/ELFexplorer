@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -14,7 +14,7 @@
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
 
-## What Changed in 0.4.0
+## What Changed in 0.5.0
 
 - Textual is now the default UI mode (`--ui textual`) when available.
 - Calling the CLI without a binary can launch a Textual workspace UX for iterative workflows.
@@ -23,20 +23,26 @@
 - Added Markdown and PDF export for single reports and collections.
 - Added stronger false-positive guardrails across language/compiler/build-system layers.
 - Added artifact feedback loop to reduce cross-domain misclassification (for example, firmware vs hosted runtime).
+- Added DWARF language-attribute scoring (`DW_AT_language`) for stronger language attribution.
+- Added DWARF path-based build-system inference (`DW_AT_comp_dir`, `DW_AT_name`).
+- Added new language heuristics: `Kotlin/Native`, `Pascal`, `Crystal`.
+- Added new compiler heuristics: `Intel ICC/ICX`, `TinyCC`, `LDC`, `GDC`.
+- Added new build-system heuristics: `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`.
+- Added `install_deps.py` profile/group dependency installer.
 
 ## Detection Coverage
 
 ### Languages
 
-`ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
+`ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
 
 ### Compilers/Assemblers
 
-`GCC`, `Clang`, `Rustc`, `Go gc`, `Zig`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
+`GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
 
 ### Build Systems
 
-`CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Ambiguous: ...`, `Unknown`
+`CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Ambiguous: ...`, `Unknown`
 
 ### Artifact Types
 
@@ -47,6 +53,7 @@
 Current reliability strategy combines multiple signal classes:
 - ELF structure (`ET_*`, `PT_*`, `DT_NEEDED`, interpreter/loader presence)
 - sections, symbols, note sections, comment/debug strings
+- DWARF compile unit attributes (`DW_AT_language`, `DW_AT_comp_dir`, `DW_AT_name`, `DW_AT_producer`)
 - architecture-shape and disassembly-inspired instruction patterns
 - artifact-first context propagation into language/compiler/build-system scorers
 - conservative tie handling (`Ambiguous`) and weak-signal fallback (`Unknown`)
@@ -70,6 +77,7 @@ Current false-positive guardrails include:
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
 - `src/reporting/export.py`: Markdown/PDF export helpers
 - `src/reporting/tasks.py`: task-file batch runner (`scan` + `crawl`)
+- `install_deps.py`: dependency installer (profile/group based)
 - `tests/`: regression and unit tests
 - `test-bin/`: multi-arch corpus fixtures
 
@@ -86,6 +94,14 @@ Install:
 python3 -m pip install pyelftools
 python3 -m pip install textual
 python3 -m pip install reportlab
+```
+
+Or use the project installer:
+
+```bash
+python3 install_deps.py --profile runtime
+python3 install_deps.py --profile all --upgrade
+python3 install_deps.py --print-groups
 ```
 
 ## CLI Usage
@@ -205,6 +221,12 @@ Run all tests:
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
+Includes:
+- CLI/corpus tests
+- heuristic detector unit tests
+- reporting workflow tests
+- dependency installer tests
+
 Corpus test verbosity levels:
 - default/no switch: level 1
 - `-v`: level 1
@@ -237,17 +259,17 @@ Useful next steps to increase precision further:
 ## Expansion Backlog (Languages, Compilers, Build Systems)
 
 High-value additions:
-- languages: `Zig`/`Nim` corpus coverage across all arches, `Kotlin/Native`, `Crystal`, `V`, `Pascal/FreePascal`, `Erlang/Elixir NIF hosts`
-- compilers/toolchains: `MSVC (ELF cross-host traces)`, `ICC/ICX`, `TinyCC`, `PCC`, `LDC/GDC`, `GNAT variants`
+- languages: `Zig`/`Nim` corpus coverage across all arches, `V`, `Odin`, `Pascal/FreePascal` corpus expansion, `Erlang/Elixir NIF hosts`
+- compilers/toolchains: `MSVC (ELF cross-host traces)`, `PCC`, `DMD`, `GNAT variants`
 - assemblers: `YASM`, `GNU as` profile split from generic GCC paths
-- build systems: `Yocto`, `Buildroot`, `QMake`, `Waf`, `Premake`, `PlatformIO`, `idf.py/ESP-IDF`, `west` (Zephyr)
+- build systems: `QMake`, `Waf`, `Premake`, `Bazel`/`Buck2` confidence refinement, BSP-layer attribution over detected SDK/toolchain
 
 See [`ELFexplored_Guide.md`](ELFexplored_Guide.md) for method-level details and extension strategy.
 
 ## Versioning
 
 - Canonical version source: [`VERSION`](VERSION)
-- Current version: `0.4.0`
+- Current version: `0.5.0`
 - CLI check:
 
 ```bash

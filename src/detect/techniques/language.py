@@ -1,14 +1,17 @@
 from detect.constants import (
+    CRYSTAL_STRING_MARKERS,
     CSHARP_STRING_MARKERS,
     DART_STRONG_MARKERS,
     DART_TOKEN_PATTERN,
     HASKELL_STRING_MARKERS,
     JULIA_STRING_MARKERS,
+    KOTLIN_NATIVE_STRING_MARKERS,
     LANGUAGE_STRING_SCAN_SECTIONS,
     LUA_STRING_MARKERS,
     NIM_STRING_MARKERS,
     NOTE_SECTIONS,
     OCAML_STRING_MARKERS,
+    PASCAL_STRING_MARKERS,
     SAGELANG_GENERATED_C_PATTERN,
     SAGELANG_RUNTIME_STRINGS,
     SAGELANG_STRONG_STRING_MARKERS,
@@ -16,8 +19,65 @@ from detect.constants import (
     ZIG_STRING_MARKERS,
     ZIG_TOKEN_PATTERN,
 )
-from detect.utils import read_section_data
+from detect.utils import iter_dwarf_top_die_attributes, normalize_dwarf_attr_value, read_section_data
 from symbols.elfsymbols import scan_symbols
+
+DWARF_LANGUAGE_NAME_MAP = {
+    "DW_LANG_C89": "C",
+    "DW_LANG_C": "C",
+    "DW_LANG_C99": "C",
+    "DW_LANG_C11": "C",
+    "DW_LANG_C17": "C",
+    "DW_LANG_C_plus_plus": "C++",
+    "DW_LANG_C_plus_plus_03": "C++",
+    "DW_LANG_C_plus_plus_11": "C++",
+    "DW_LANG_C_plus_plus_14": "C++",
+    "DW_LANG_C_plus_plus_17": "C++",
+    "DW_LANG_Rust": "Rust",
+    "DW_LANG_Go": "Go",
+    "DW_LANG_D": "D",
+    "DW_LANG_Python": "Python",
+    "DW_LANG_Java": "Java",
+    "DW_LANG_Swift": "Swift",
+    "DW_LANG_Kotlin": "Kotlin/Native",
+    "DW_LANG_Crystal": "Crystal",
+    "DW_LANG_Pascal83": "Pascal",
+    "DW_LANG_Fortran77": "Fortran",
+    "DW_LANG_Fortran90": "Fortran",
+    "DW_LANG_Fortran95": "Fortran",
+    "DW_LANG_Fortran03": "Fortran",
+    "DW_LANG_Fortran08": "Fortran",
+    "DW_LANG_Ada83": "Ada",
+    "DW_LANG_Ada95": "Ada",
+}
+
+DWARF_LANGUAGE_CODE_MAP = {
+    0x0001: "DW_LANG_C89",
+    0x0002: "DW_LANG_C",
+    0x0003: "DW_LANG_Ada83",
+    0x0004: "DW_LANG_C_plus_plus",
+    0x0007: "DW_LANG_Fortran77",
+    0x0008: "DW_LANG_Fortran90",
+    0x0009: "DW_LANG_Pascal83",
+    0x000B: "DW_LANG_Java",
+    0x000C: "DW_LANG_C99",
+    0x000E: "DW_LANG_Fortran95",
+    0x000F: "DW_LANG_Ada95",
+    0x0013: "DW_LANG_D",
+    0x0014: "DW_LANG_Python",
+    0x0016: "DW_LANG_Go",
+    0x0019: "DW_LANG_C_plus_plus_03",
+    0x001A: "DW_LANG_C_plus_plus_11",
+    0x001C: "DW_LANG_Rust",
+    0x001D: "DW_LANG_C11",
+    0x001E: "DW_LANG_Swift",
+    0x0021: "DW_LANG_Fortran03",
+    0x0022: "DW_LANG_Fortran08",
+    0x0026: "DW_LANG_Kotlin",
+    0x0028: "DW_LANG_Crystal",
+    0x002A: "DW_LANG_C_plus_plus_17",
+    0x002C: "DW_LANG_C17",
+}
 
 
 def score_comment_section(elf, scores):
@@ -45,6 +105,12 @@ def score_comment_section(elf, scores):
             scores["Fortran"] += 3
         if "nim" in data:
             scores["Nim"] += 3
+        if "kotlin/native" in data or "konanc" in data or "kotlin root package" in data:
+            scores["Kotlin/Native"] += 4
+        if "free pascal" in data or "freepascal" in data or "fpc" in data:
+            scores["Pascal"] += 3
+        if "crystal-lang" in data or "__crystal_main" in data:
+            scores["Crystal"] += 3
         if "ocaml" in data:
             scores["OCaml"] += 3
         if "haskell" in data or "ghc" in data:
@@ -146,6 +212,12 @@ def score_dynamic_section(elf, scores):
                 scores["Nim"] += 4
             if "libzig" in needed:
                 scores["Zig"] += 4
+            if "libkotlin" in needed or "libkonan" in needed:
+                scores["Kotlin/Native"] += 5
+            if "libpas" in needed or "libfpc" in needed or "fpc" in needed:
+                scores["Pascal"] += 4
+            if "libcrystal" in needed:
+                scores["Crystal"] += 5
 
         if needed_libs == {"libc.so.6"}:
             scores["C"] += 2
@@ -177,6 +249,9 @@ def score_general_language_strings(elf, scores):
     dart_markers = set()
     csharp_markers = set()
     nim_markers = set()
+    kotlin_native_markers = set()
+    pascal_markers = set()
+    crystal_markers = set()
     zig_markers = set()
     haskell_markers = set()
     ocaml_markers = set()
@@ -199,6 +274,15 @@ def score_general_language_strings(elf, scores):
         for marker in NIM_STRING_MARKERS:
             if marker in data:
                 nim_markers.add(marker)
+        for marker in KOTLIN_NATIVE_STRING_MARKERS:
+            if marker in data:
+                kotlin_native_markers.add(marker)
+        for marker in PASCAL_STRING_MARKERS:
+            if marker in data:
+                pascal_markers.add(marker)
+        for marker in CRYSTAL_STRING_MARKERS:
+            if marker in data:
+                crystal_markers.add(marker)
         for marker in ZIG_STRING_MARKERS:
             if marker in data:
                 zig_markers.add(marker)
@@ -239,6 +323,21 @@ def score_general_language_strings(elf, scores):
         scores["Nim"] += 5
     elif len(nim_markers) >= 1:
         scores["Nim"] += 2
+
+    if len(kotlin_native_markers) >= 3:
+        scores["Kotlin/Native"] += 9
+    elif len(kotlin_native_markers) >= 1:
+        scores["Kotlin/Native"] += 4
+
+    if len(pascal_markers) >= 2:
+        scores["Pascal"] += 7
+    elif len(pascal_markers) >= 1:
+        scores["Pascal"] += 3
+
+    if len(crystal_markers) >= 2:
+        scores["Crystal"] += 7
+    elif len(crystal_markers) >= 1:
+        scores["Crystal"] += 3
 
     if len(zig_markers) >= 1:
         scores["Zig"] += 4
@@ -341,6 +440,12 @@ def score_debug_info(elf, scores):
             scores["Fortran"] += 2
         if b"nim" in data:
             scores["Nim"] += 2
+        if b"kotlin/native" in data or b"konanc" in data or b"kotlin_root" in data:
+            scores["Kotlin/Native"] += 3
+        if b"free pascal" in data or b"freepascal" in data or b"fpc_" in data:
+            scores["Pascal"] += 3
+        if b"crystal" in data or b"__crystal_main" in data:
+            scores["Crystal"] += 3
         if b"ocaml" in data or b"caml_" in data:
             scores["OCaml"] += 3
         if b"haskell" in data or b"ghc" in data:
@@ -390,6 +495,12 @@ def score_section_names(elf, scores):
             scores["Fortran"] += 2
         if section_name == ".nim":
             scores["Nim"] += 2
+        if section_name in [".kotlin", ".konan", ".note.kotlin.native"]:
+            scores["Kotlin/Native"] += 4
+        if section_name in [".fpc", ".pascal"]:
+            scores["Pascal"] += 3
+        if section_name in [".crystal", ".note.crystal"]:
+            scores["Crystal"] += 3
         if section_name in [".ocaml", ".caml"]:
             scores["OCaml"] += 3
         if section_name in [".julia", ".julia_consts"]:
@@ -412,6 +523,31 @@ def score_section_names(elf, scores):
             scores["Zig"] += 4
 
 
+def score_dwarf_language_attributes(elf, scores):
+    for attrs in iter_dwarf_top_die_attributes(elf) or []:
+        lang_attr = attrs.get("DW_AT_language")
+        if not lang_attr:
+            continue
+
+        raw_value = normalize_dwarf_attr_value(lang_attr.value)
+        language_name = None
+        if isinstance(raw_value, int):
+            language_name = DWARF_LANGUAGE_CODE_MAP.get(raw_value)
+        else:
+            value_text = str(raw_value)
+            if value_text.startswith("DW_LANG_"):
+                language_name = value_text
+            elif value_text.isdigit():
+                language_name = DWARF_LANGUAGE_CODE_MAP.get(int(value_text))
+
+        if not language_name:
+            continue
+
+        mapped = DWARF_LANGUAGE_NAME_MAP.get(language_name)
+        if mapped and mapped in scores:
+            scores[mapped] += 8
+
+
 def apply_artifact_language_bias(artifact_profile, scores):
     if not artifact_profile:
         return
@@ -428,6 +564,9 @@ def apply_artifact_language_bias(artifact_profile, scores):
             scores["Dart"] = max(0, scores["Dart"] - 4)
         if not signals.get("dotnet_runtime_present"):
             scores["C#"] = max(0, scores["C#"] - 6)
+        if "RP2040" in "".join(artifact_profile.get("target_hints", [])):
+            scores["Kotlin/Native"] = max(0, scores["Kotlin/Native"] - 2)
+            scores["Crystal"] = max(0, scores["Crystal"] - 2)
 
         target_hints = set(artifact_profile.get("target_hints", []))
         if any("cortex-m" in hint.lower() for hint in target_hints):
