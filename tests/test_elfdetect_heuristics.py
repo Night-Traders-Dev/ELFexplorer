@@ -429,6 +429,19 @@ class HeuristicDetectionTests(unittest.TestCase):
         profile = self.detect_artifact(elf)
         self.assertEqual(profile["artifact_type"], "Linux Shared Library")
 
+    def test_detects_artifact_static_userspace_profile(self):
+        elf = FakeELF(
+            [
+                FakeSection(".note.gnu.build-id", data=b"\x01\x02"),
+            ],
+            machine="EM_X86_64",
+            etype="ET_EXEC",
+            entry=0x401000,
+            segments=[FakeSegment("PT_LOAD", data=b"\x90" * 64, p_vaddr=0x400000, p_paddr=0x400000)],
+        )
+        profile = self.detect_artifact(elf)
+        self.assertEqual(profile["artifact_type"], "Static User-space Executable")
+
 
 if __name__ == "__main__":
     unittest.main()

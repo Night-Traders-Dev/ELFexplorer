@@ -55,6 +55,7 @@ BUILD_SYSTEM_HEURISTICS = (
 
 ARTIFACT_HEURISTICS = (
     "Bare-metal Firmware",
+    "Static User-space Executable",
     "Linux User-space Executable",
     "Linux Shared Library",
     "Linux Kernel Module",

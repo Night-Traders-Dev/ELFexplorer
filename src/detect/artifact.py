@@ -70,6 +70,8 @@ def _pick_runtime_hint(profile):
 
     if artifact_type.startswith("Linux") and "glibc" in values:
         return "glibc"
+    if artifact_type == "Static User-space Executable" and "glibc" in values:
+        return "glibc"
     if artifact_type == "Bare-metal Firmware" and "newlib" in values:
         return "newlib"
     if not values:
@@ -86,6 +88,8 @@ def _linkage_model(profile):
         return "Dynamic linked"
     if profile.get("artifact_type") == "Bare-metal Firmware":
         return "Static bare-metal"
+    if profile.get("artifact_type") == "Static User-space Executable":
+        return "Static user-space"
     if profile.get("artifact_type") == "Linux Kernel Module":
         return "Kernel module"
     if profile.get("artifact_type") == "Relocatable Object":

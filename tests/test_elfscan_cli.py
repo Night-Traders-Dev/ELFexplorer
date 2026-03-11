@@ -98,7 +98,7 @@ class ElfscanCorpusCLITests(unittest.TestCase):
         )
 
         completed = subprocess.run(
-            [sys.executable, str(self.elfscan_script), str(binary)],
+            [sys.executable, str(self.elfscan_script), "--ui", "plain", str(binary)],
             cwd=str(self.repo_root),
             capture_output=True,
             text=True,

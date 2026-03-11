@@ -159,10 +159,21 @@ def score_artifact_program_headers(elf, scores, profile):
     if not has_interp and not needed_libs:
         if machine in ARTIFACT_EMBEDDED_MACHINES:
             scores["Bare-metal Firmware"] += 8
+        elif machine in {"EM_X86_64", "EM_386", "EM_486"}:
+            scores["Static User-space Executable"] += 8
         else:
             scores["Bare-metal Firmware"] += 4
         _set_signal(profile, "static_no_loader", True)
         _add_indicator(profile, "No interpreter and no dynamic dependencies")
+
+    if (
+        etype == "ET_EXEC"
+        and machine in {"EM_X86_64", "EM_386", "EM_486"}
+        and not has_interp
+        and not needed_libs
+    ):
+        scores["Static User-space Executable"] += 8
+        _add_indicator(profile, "ET_EXEC static x86/x86_64 executable shape")
 
 
 def score_artifact_sections(elf, scores, profile):
@@ -184,6 +195,12 @@ def score_artifact_sections(elf, scores, profile):
 
     if ".note.abi-tag" in section_names:
         scores["Linux User-space Executable"] += 2
+    if ".note.gnu.build-id" in section_names:
+        machine = profile.get("machine", "Unknown")
+        if machine in {"EM_X86_64", "EM_386", "EM_486"} and profile.get("signals", {}).get(
+            "static_no_loader", False
+        ):
+            scores["Static User-space Executable"] += 3
 
     if ".binary_info" in section_names:
         _add_hint(profile, "sdk_hints", "Pico SDK")
@@ -292,6 +309,7 @@ def score_artifact_symbols(elf, scores, profile):
 
     if "__libc_start_main" in symbols:
         scores["Linux User-space Executable"] += 10
+        scores["Static User-space Executable"] += 6
         _add_hint(profile, "runtime_hints", "glibc")
         _add_indicator(profile, "__libc_start_main symbol present")
 
@@ -394,3 +412,8 @@ def score_artifact_memory_map(elf, scores, profile):
             _add_hint(profile, "sdk_hints", "Pico SDK")
             _add_indicator(profile, "Vector pattern aligns with RP2040 SRAM/flash ranges")
         break
+
+    if machine in {"EM_X86_64", "EM_386", "EM_486"} and not has_interp and not needed_libs:
+        if 0x400000 <= entry < 0x800000:
+            scores["Static User-space Executable"] += 8
+            _add_indicator(profile, f"Entry address in typical Linux static text range: {entry:#x}")
