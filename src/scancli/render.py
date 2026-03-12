@@ -62,6 +62,10 @@ def print_plain_report(report, show_explain=False):
     print("Artifact profile details:")
     print(f"  Artifact Type: {artifact_profile.get('artifact_type', 'Unknown')}")
     print(f"  Confidence: {artifact_profile.get('confidence', 0)}")
+    if "confidence_calibrated" in artifact_profile:
+        print(f"  Confidence Calibrated: {artifact_profile.get('confidence_calibrated', 0)}")
+    if "confidence_raw" in artifact_profile:
+        print(f"  Confidence Raw: {artifact_profile.get('confidence_raw', 0)}")
     print(f"  Linkage Model: {artifact_profile.get('linkage_model', 'Unknown')}")
     print(f"  Target Hint: {artifact_profile.get('target', 'Unknown')}")
     print(f"  SDK Hint: {artifact_profile.get('sdk', 'Unknown')}")
@@ -88,6 +92,11 @@ def print_plain_report(report, show_explain=False):
     print(f"{confidence_label} {artifact_profile.get('confidence', 0)}")
     if "confidence_raw" in artifact_profile:
         print(f"{styled('Raw Artifact Confidence:', STYLE_BOLD, FG_GREEN)} {artifact_profile.get('confidence_raw', 0)}")
+    if "confidence_calibrated" in artifact_profile:
+        print(
+            f"{styled('Calibrated Artifact Confidence:', STYLE_BOLD, FG_GREEN)} "
+            f"{artifact_profile.get('confidence_calibrated', artifact_profile.get('confidence', 0))}"
+        )
     print(f"{target_label} {artifact_profile.get('target', 'Unknown')}")
     print(f"{sdk_label} {artifact_profile.get('sdk', 'Unknown')}")
     print(f"{rtos_label} {artifact_profile.get('rtos', 'None detected')}")
@@ -144,7 +153,26 @@ def print_plain_report(report, show_explain=False):
             print(f"Likely MCU: {fw.get('likely_mcu', 'Unknown')}")
             print(f"Likely Vendor: {fw.get('likely_vendor', 'Unknown')}")
             print(f"SDK Candidates: {', '.join(fw.get('sdk_candidates', [])) or 'None'}")
+            sdk_versions = fw.get("sdk_versions", {})
+            if sdk_versions:
+                print("SDK Versions:")
+                for sdk_name, versions in sorted(sdk_versions.items()):
+                    print(f"  - {sdk_name}: {', '.join(versions)}")
             print(f"RTOS Candidates: {', '.join(fw.get('rtos_candidates', [])) or 'None'}")
+            linker_hints = fw.get("linker_hints", [])
+            if linker_hints:
+                print("Linker Hints:")
+                for hint in linker_hints:
+                    print(f"  - {hint}")
+            vector_profile = fw.get("vector_table_profile", {})
+            if vector_profile:
+                print(
+                    "Vector Table Profile: "
+                    f"present={vector_profile.get('looks_like_vector_table', False)} "
+                    f"section={vector_profile.get('section', 'None')} "
+                    f"initial_sp={vector_profile.get('initial_sp', 'None')} "
+                    f"reset_handler={vector_profile.get('reset_handler', 'None')}"
+                )
             for item in fw.get("signals", []):
                 print(f"  - {item}")
         else:

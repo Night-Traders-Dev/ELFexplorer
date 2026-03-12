@@ -2,6 +2,27 @@ import json
 from pathlib import Path
 
 
+def _freeze_entry(entry):
+    if isinstance(entry, dict):
+        items = tuple(sorted((str(k), str(v)) for k, v in entry.items()))
+        return ("dict", items)
+    if isinstance(entry, list):
+        return ("list", tuple(str(item) for item in entry))
+    return ("value", str(entry))
+
+
+def _dedupe_entries(entries):
+    seen = set()
+    out = []
+    for entry in entries:
+        key = _freeze_entry(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(entry)
+    return out
+
+
 def load_re_annotations(path):
     with Path(path).expanduser().open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -182,11 +203,11 @@ def merge_scan_and_re_annotations(scan_result, normalized_annotations, policy="u
     imported_comments = list(normalized_annotations.get("comments", []))
 
     if policy == "prefer-import":
-        merged_symbols = imported_functions or imported_labels
+        merged_symbols = _dedupe_entries(imported_functions + imported_labels)
     elif policy == "prefer-scan":
-        merged_symbols = scan_symbols
+        merged_symbols = _dedupe_entries(scan_symbols)
     else:
-        merged_symbols = scan_symbols + imported_functions + imported_labels
+        merged_symbols = _dedupe_entries(scan_symbols + imported_functions + imported_labels)
 
     return {
         "policy": policy,

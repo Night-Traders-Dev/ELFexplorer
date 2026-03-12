@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.6.0` (see `VERSION`).
+Current release: `0.8.0` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -107,14 +107,16 @@ Outputs are available as:
   - artifact profile orchestration (confidence + hints)
 - `src/advanced/`
   - benchmark runner (accuracy, confusion matrix, precision/recall)
+  - per-architecture benchmark slicing + reliability-curve output
+  - calibration model generation/application for artifact confidence
   - score explainability generation (top positives/competitors + confidence notes)
-  - plugin/signature rule application
+  - plugin/signature rule application + schema validation/conflict diagnostics
   - mixed-binary attribution (section + symbol hints)
-  - firmware fingerprinting layer
+  - firmware fingerprinting layer (MCU/vendor/SDK/RTOS + linker/vector hints)
   - stripped/packed/obfuscated hardening profile
   - cross-binary diff model/rendering
   - CI policy evaluation
-  - reverse-engineering import/export interop
+  - reverse-engineering import/export interop + merge policies
 - `src/detect/techniques/`
   - technique modules grouped by evidence type
 - `src/detect/techniques/artifact.py`
@@ -127,6 +129,8 @@ Outputs are available as:
   - tabbed Textual report viewer
 - `src/ui/textual_workspace.py`
   - interactive Textual workspace for scan/load/export workflows and advanced ELF edit mode
+- `src/ui/textual_diff.py`
+  - dedicated tabbed diff screen for summary/delta/indicator comparisons
 - `src/ui/textual_editor.py`
   - dedicated split-pane editor workbench screen
   - interactive disassembler-style hex table (click selection + anchor/range behavior)
@@ -175,6 +179,7 @@ Example dimensions:
 - avoid overfitting to a single marker class
 - maintain explicit abstention paths (`Unknown`/`Ambiguous`)
 - keep parser-critical output lines stable for automation
+- optionally apply benchmark-derived confidence calibration to artifact confidence output
 
 ## 5. Language Detection Coverage
 
@@ -236,6 +241,7 @@ Current labels:
 
 Profile fields include:
 - confidence score
+- raw/calibrated confidence (when calibration model is applied)
 - target hint
 - SDK/framework hint
 - RTOS hint
@@ -249,6 +255,8 @@ Profile fields include:
 - missing interpreter + low dynamic dependency profile
 - MCU/embedded machine types
 - vector-table-like load content and memory-map alignment
+- linker-script marker families (`MEMORY`, `SECTIONS`, `ORIGIN`, `LENGTH`, `ldscripts`)
+- SDK version extraction from embedded strings
 - firmware-centric sections (`.boot2`, `.binary_info`, etc.)
 - SDK/runtime markers (Pico SDK, CMSIS/syscall stubs)
 
@@ -290,6 +298,7 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - task-file batch: `--task-file`
 - load existing report(s): `--load-scan`, `--load-collection`
 - benchmark mode: `--benchmark-manifest` or `--benchmark-corpus`
+- benchmark calibration export: `--benchmark-export-calibration`
 - binary diff mode: `--diff`
 
 ### 10.4 Persistence and export
@@ -300,6 +309,8 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - export collection: `--export-collection-md`, `--export-collection-pdf`
 - export diff markdown: `--export-diff-md`
 - export RE payload: `--re-export` (`--re-export-format` supports `generic`, `ghidra`, `ida`, `rizin`)
+- runtime confidence calibration model input: `--calibration-model`
+- RE merge policy control: `--re-merge-policy union|prefer-import|prefer-scan`
 
 ### 10.5 Textual Report Palette
 
@@ -331,7 +342,9 @@ Behavior:
 - explainability: `--explain`
 - CI policy gate: `--ci` with optional `--policy-file`
 - RE import: `--re-import`
+- RE merge policy: `--re-merge-policy`
 - runtime custom signature packs: `--signature-pack <pack.json>` (repeatable)
+- confidence calibration model: `--calibration-model <model.json>`
 
 ### 10.8 Signature Update Channel
 
@@ -354,6 +367,8 @@ Workspace commands:
 - `export-pdf <path>`
 - `export-collection-md <path>`
 - `export-collection-pdf <path>`
+- `diff <other-file> [mode]`
+- `diff-ui <other-file> [mode]`
 - `show`
 - `edit-open <elf>`
 - `edit-ui`

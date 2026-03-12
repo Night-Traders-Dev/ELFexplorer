@@ -305,4 +305,33 @@ def render_benchmark_summary(result):
                 f"    {bucket}: empirical_accuracy={entry.get('empirical_accuracy', 0.0):.4f} "
                 f"({entry.get('correct', 0)}/{entry.get('total', 0)})"
             )
+    per_arch = result.get("per_arch_metrics", {})
+    language_arch = per_arch.get("language", {})
+    if language_arch:
+        lines.append("  per-arch language accuracy:")
+        for arch, entry in language_arch.items():
+            lines.append(
+                f"    {arch}: accuracy={entry.get('accuracy', 0.0):.4f} "
+                f"({entry.get('correct', 0)}/{entry.get('total', 0)})"
+            )
+
+    mismatches = []
+    for item in result.get("cases", []):
+        matches = item.get("matches", {})
+        if not all(matches.values()):
+            mismatches.append(item)
+    if mismatches:
+        lines.append(f"  failing cases: {len(mismatches)}")
+        for item in mismatches[:10]:
+            path = item.get("path", "unknown")
+            expected = item.get("expected", {})
+            observed = item.get("observed", {})
+            details = []
+            for key in ("language", "compiler", "build_system", "artifact_type"):
+                if key not in expected:
+                    continue
+                if expected.get(key) != observed.get(key):
+                    details.append(f"{key}: {expected.get(key)} -> {observed.get(key)}")
+            joined = "; ".join(details) if details else "mismatch"
+            lines.append(f"    {path}: {joined}")
     return "\n".join(lines)

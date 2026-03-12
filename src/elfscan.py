@@ -120,7 +120,16 @@ def main():
                 out_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
                 print(f"Saved benchmark report: {out_path}")
             if args.benchmark_export_calibration:
-                model = build_calibration_model(result)
+                min_samples = 2
+                if args.policy_file:
+                    policy_for_calibration = load_policy(args.policy_file)
+                    min_samples = int(
+                        policy_for_calibration.get("benchmark_thresholds", {}).get(
+                            "min_reliability_bin_samples",
+                            min_samples,
+                        )
+                    )
+                model = build_calibration_model(result, min_samples=min_samples)
                 saved_model = save_calibration_model(model, args.benchmark_export_calibration)
                 print(f"Saved calibration model: {saved_model}")
             if args.ci:

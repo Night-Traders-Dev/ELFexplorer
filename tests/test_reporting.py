@@ -38,6 +38,8 @@ def _fake_report(path="/tmp/hello_c"):
             "artifact_profile": {
                 "artifact_type": "Linux User-space Executable",
                 "confidence": 91,
+                "confidence_raw": 93,
+                "confidence_calibrated": 91,
                 "scores": {
                     "Linux User-space Executable": 91,
                     "Bare-metal Firmware": 0,
@@ -49,6 +51,18 @@ def _fake_report(path="/tmp/hello_c"):
                 "linkage_model": "Dynamic user-space",
                 "loader": "/lib64/ld-linux-x86-64.so.2",
                 "indicators": ["PT_INTERP present", "DT_NEEDED includes libc.so.6"],
+            },
+            "firmware_fingerprint": {
+                "is_firmware_candidate": False,
+                "firmware_confidence": 0,
+                "likely_mcu": "Unknown",
+                "likely_vendor": "Unknown",
+                "sdk_candidates": [],
+                "sdk_versions": {},
+                "rtos_candidates": [],
+                "linker_hints": [],
+                "vector_table_profile": {"looks_like_vector_table": False},
+                "signals": [],
             },
         },
         "metadata_text": "File Type: ET_DYN\nMachine: EM_X86_64",
@@ -96,6 +110,7 @@ class ReportingTests(unittest.TestCase):
             self.assertIn("# ELFexplorer Scan Report", text)
             self.assertIn("## Detection Summary", text)
             self.assertIn("| Source Language | C |", text)
+            self.assertIn("| Artifact Confidence Calibrated | 91 |", text)
             self.assertIn("## ELF Metadata", text)
 
     def test_export_collection_markdown_contains_index(self):

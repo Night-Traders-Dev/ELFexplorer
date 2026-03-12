@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,30 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.8.0
+
+- Added confidence calibration pipeline for artifact confidence:
+  - benchmark-derived calibration export (`--benchmark-export-calibration`)
+  - runtime calibration application (`--calibration-model`)
+  - calibrated/raw confidence surfaced in plain, Textual, Markdown, and PDF outputs
+- Expanded benchmark output quality:
+  - per-architecture accuracy slices
+  - failing-case summary in benchmark render output
+  - CI benchmark reliability check now uses bin midpoint expectation
+- Strengthened firmware fingerprinting:
+  - linker-script marker detection (`MEMORY`, `SECTIONS`, `ORIGIN`, `LENGTH`)
+  - SDK version extraction (Pico SDK, ESP-IDF, Zephyr, FreeRTOS markers)
+  - vector-table shape probing for Cortex-M style images
+- Added RE merge policy control (`--re-merge-policy union|prefer-import|prefer-scan`)
+  - merged RE view now included in evidence/report output
+- Added dedicated Textual diff screen:
+  - workspace commands `diff <other-file> [mode]` and `diff-ui <other-file> [mode]`
+  - tabbed diff visualization for summary, score deltas, and indicator changes
+- Hardened signature rule-pack handling:
+  - schema validation
+  - conflict/duplicate diagnostics
+  - rule priority + operation metadata surfaced in reports
 
 ## What Changed in 0.7.0
 
@@ -162,6 +186,7 @@ Current false-positive guardrails include:
 - `src/ui/textual_report.py`: Textual report viewer
 - `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
 - `src/ui/textual_editor.py`: split-pane Textual editor workbench (interactive hex selection, raw preview, synchronized disassembly highlighting)
+- `src/ui/textual_diff.py`: dedicated Textual diff screen for side-by-side classification/evidence deltas
 - `src/edit/elf_editor.py`: safe in-memory ELF header editor + disassembler-aligned file-offset/VA mapping utilities
 - `src/reporting/persistence.py`: JSON save/load/list for reports and collections
 - `src/reporting/export.py`: Markdown/PDF export helpers
@@ -226,6 +251,8 @@ Core options:
 - `--benchmark-manifest <manifest.json>`
 - `--benchmark-corpus <dir>`
 - `--benchmark-out <path.json>`
+- `--benchmark-export-calibration <path.json>`
+- `--calibration-model <path.json>`
 - `--signature-pack <pack.json>` (repeatable)
 - `--install-signature-pack <pack.json>`
 - `--update-signatures <url>`
@@ -234,6 +261,7 @@ Core options:
 - `--re-import <annotations.json>`
 - `--re-export <path.json>`
 - `--re-export-format generic|ghidra|ida|rizin`
+- `--re-merge-policy union|prefer-import|prefer-scan`
 - `--version`
 
 Examples:
@@ -251,10 +279,13 @@ python3 src/elfscan.py --task-file tasks.json --export-collection-md reports/bat
 python3 src/elfscan.py --load-scan ~/.elfexplorer/scans/hello_rust-20260311T020000Z.json
 python3 src/elfscan.py --load-collection ~/.elfexplorer/scans/collection-20260311T020500Z.json --show-each
 python3 src/elfscan.py --benchmark-corpus test-bin --benchmark-out reports/bench.json
+python3 src/elfscan.py --benchmark-corpus test-bin --benchmark-out reports/bench.json --benchmark-export-calibration reports/calibration.json
 python3 src/elfscan.py --benchmark-manifest benchmarks/cases.json
+python3 src/elfscan.py test-bin/x86_64/hello_c --calibration-model reports/calibration.json
 python3 src/elfscan.py test-bin/x86_64/hello_c --diff test-bin/x86_64/hello_cpp --export-diff-md reports/c_vs_cpp.md
 python3 src/elfscan.py test-bin/x86_64/hello_go --ci --policy-file ci-policy.json
 python3 src/elfscan.py test-bin/x86_64/hello_c --signature-pack rules/custom-pack.json --explain
+python3 src/elfscan.py test-bin/x86_64/hello_c --re-import re.json --re-merge-policy prefer-import
 python3 src/elfscan.py --install-signature-pack rules/custom-pack.json --signatures-dir ~/.elfexplorer/signatures
 python3 src/elfscan.py --update-signatures https://example.com/elfexplorer-signatures.json
 python3 src/elfscan.py --list-signature-packs

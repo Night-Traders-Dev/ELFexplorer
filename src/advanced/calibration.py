@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 
-def build_calibration_model(benchmark_result):
+def build_calibration_model(benchmark_result, min_samples=2):
     reliability = benchmark_result.get("reliability_curve", {})
     bins = []
     for bucket, entry in sorted(reliability.items()):
@@ -12,14 +12,24 @@ def build_calibration_model(benchmark_result):
             upper = int(right)
         except Exception:
             continue
+        sample_count = int(entry.get("total", 0))
+        empirical_accuracy = float(entry.get("empirical_accuracy", 0.0))
+        midpoint = ((lower + upper) / 2.0) / 100.0
+        calibrated_accuracy = empirical_accuracy if sample_count >= int(min_samples) else midpoint
         bins.append(
             {
                 "range": [lower, upper],
-                "empirical_accuracy": float(entry.get("empirical_accuracy", 0.0)),
-                "sample_count": int(entry.get("total", 0)),
+                "empirical_accuracy": empirical_accuracy,
+                "sample_count": sample_count,
+                "calibrated_accuracy": round(calibrated_accuracy, 4),
             }
         )
-    return {"version": 1, "bins": bins}
+    return {
+        "version": 1,
+        "min_samples": int(min_samples),
+        "source_case_count": int(benchmark_result.get("case_count", 0)),
+        "bins": bins,
+    }
 
 
 def save_calibration_model(model, path):
@@ -43,12 +53,17 @@ def load_calibration_model(path):
 
 def calibrate_confidence(raw_confidence, model):
     value = max(0, min(99, int(raw_confidence)))
+    fallback = value
     for item in model.get("bins", []):
         rng = item.get("range", [])
         if not isinstance(rng, list) or len(rng) != 2:
             continue
         lower, upper = int(rng[0]), int(rng[1])
         if lower <= value < upper:
-            return int(round(float(item.get("empirical_accuracy", 0.0)) * 100))
-    return value
-
+            calibrated = item.get("calibrated_accuracy", item.get("empirical_accuracy", 0.0))
+            return int(round(float(calibrated) * 100))
+        midpoint = int(round(((lower + upper) / 2.0)))
+        if abs(midpoint - value) < abs(fallback - value):
+            calibrated = item.get("calibrated_accuracy", item.get("empirical_accuracy", 0.0))
+            fallback = int(round(float(calibrated) * 100))
+    return fallback

@@ -1,6 +1,7 @@
 import shlex
 from datetime import datetime, timezone
 
+from advanced.diffing import compare_reports, render_diff_plain
 from edit import ElfBinaryEditor, ElfEditError
 from settings import load_theme_preference, save_theme_preference
 
@@ -128,6 +129,7 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
+                    "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
                     "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
                     "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
                     "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
@@ -221,6 +223,7 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
+                    self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <elf> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
                     self._log("edit-show-elf | edit-set-elf <field> <value>")
@@ -362,6 +365,27 @@ def run_textual_workspace(callbacks):
                     self._log("[bold]Current report:[/bold]")
                     for line in _report_detail_lines(self.last_report):
                         self._log(f"  {line}")
+                    return
+
+                if command in {"diff", "diff-ui"}:
+                    if not self.last_report:
+                        self._log("[red]No current baseline report.[/red] Run scan/load first.")
+                        return
+                    if not args:
+                        self._log(f"[red]Usage:[/red] {command} <other-file> [mode]")
+                        return
+                    other_path = args[0]
+                    mode = args[1] if len(args) >= 2 else self.last_report.get("mode", "general")
+                    other_report = callbacks["scan"](other_path, mode=mode)
+                    diff = compare_reports(self.last_report, other_report)
+                    if command == "diff":
+                        self._log("[bold]Binary diff:[/bold]")
+                        for line in render_diff_plain(diff).splitlines():
+                            self._log(f"  {line}")
+                    else:
+                        from ui.textual_diff import DiffViewerScreenFactory
+
+                        self.push_screen(DiffViewerScreenFactory.build(self.last_report, other_report))
                     return
 
                 if command == "edit-open":

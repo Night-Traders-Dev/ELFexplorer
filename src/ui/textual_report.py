@@ -22,6 +22,8 @@ def _summary_lines(report: Dict) -> str:
         "",
         f"Artifact Type: {artifact.get('artifact_type', 'Unknown')}",
         f"Confidence: {artifact.get('confidence', 0)}",
+        f"Confidence Raw: {artifact.get('confidence_raw', artifact.get('confidence', 0))}",
+        f"Confidence Calibrated: {artifact.get('confidence_calibrated', artifact.get('confidence', 0))}",
         f"Target: {artifact.get('target', 'Unknown')}",
         f"SDK/Framework: {artifact.get('sdk', 'Unknown')}",
         f"RTOS: {artifact.get('rtos', 'None detected')}",
@@ -260,6 +262,20 @@ def run_textual_report(report: Dict):
                         f"- rtos_candidates: {', '.join(firmware.get('rtos_candidates', [])) or 'None'}",
                     ]
                 )
+                sdk_versions = firmware.get("sdk_versions", {})
+                for sdk_name, versions in sorted(sdk_versions.items()):
+                    evidence_lines.append(f"  - sdk_version[{sdk_name}]: {', '.join(versions)}")
+                for hint in firmware.get("linker_hints", []):
+                    evidence_lines.append(f"  - linker_hint: {hint}")
+                vector_profile = firmware.get("vector_table_profile", {})
+                if vector_profile:
+                    evidence_lines.append(
+                        "  - vector_table: "
+                        f"present={vector_profile.get('looks_like_vector_table', False)} "
+                        f"section={vector_profile.get('section', 'None')} "
+                        f"initial_sp={vector_profile.get('initial_sp', 'None')} "
+                        f"reset_handler={vector_profile.get('reset_handler', 'None')}"
+                    )
                 for signal in firmware.get("signals", []):
                     evidence_lines.append(f"  - signal: {signal}")
 

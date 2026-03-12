@@ -83,7 +83,26 @@ def _append_advanced_profiles(lines, scan):
         lines.append(f"- Likely MCU: `{firmware.get('likely_mcu', 'Unknown')}`")
         lines.append(f"- Likely Vendor: `{firmware.get('likely_vendor', 'Unknown')}`")
         lines.append(f"- SDK Candidates: {', '.join(firmware.get('sdk_candidates', [])) or 'None'}")
+        sdk_versions = firmware.get("sdk_versions", {})
+        if sdk_versions:
+            lines.append("- SDK Versions:")
+            for sdk_name, versions in sorted(sdk_versions.items()):
+                lines.append(f"  - {sdk_name}: {', '.join(versions)}")
         lines.append(f"- RTOS Candidates: {', '.join(firmware.get('rtos_candidates', [])) or 'None'}")
+        linker_hints = firmware.get("linker_hints", [])
+        if linker_hints:
+            lines.append("- Linker Hints:")
+            for hint in linker_hints:
+                lines.append(f"  - {hint}")
+        vector_profile = firmware.get("vector_table_profile", {})
+        if vector_profile:
+            lines.append("- Vector Table Profile:")
+            lines.append(
+                f"  - looks_like_vector_table: `{vector_profile.get('looks_like_vector_table', False)}`"
+            )
+            lines.append(f"  - section: `{vector_profile.get('section', 'None')}`")
+            lines.append(f"  - initial_sp: `{vector_profile.get('initial_sp', 'None')}`")
+            lines.append(f"  - reset_handler: `{vector_profile.get('reset_handler', 'None')}`")
         if firmware.get("signals"):
             lines.append("- Signals:")
             for signal in firmware.get("signals", []):
@@ -153,6 +172,7 @@ def report_to_markdown(report):
         f"| Artifact Type | {artifact.get('artifact_type', 'Unknown')} |",
         f"| Artifact Confidence | {artifact.get('confidence', 0)} |",
         f"| Artifact Confidence Raw | {artifact.get('confidence_raw', artifact.get('confidence', 0))} |",
+        f"| Artifact Confidence Calibrated | {artifact.get('confidence_calibrated', artifact.get('confidence', 0))} |",
         f"| Target Hint | {artifact.get('target', 'Unknown')} |",
         f"| SDK Hint | {artifact.get('sdk', 'Unknown')} |",
         f"| RTOS Hint | {artifact.get('rtos', 'None detected')} |",
@@ -281,6 +301,10 @@ def _summary_table_rows(report):
         ("Artifact Type", artifact.get("artifact_type", "Unknown")),
         ("Artifact Confidence", str(artifact.get("confidence", 0))),
         ("Artifact Confidence Raw", str(artifact.get("confidence_raw", artifact.get("confidence", 0)))),
+        (
+            "Artifact Confidence Calibrated",
+            str(artifact.get("confidence_calibrated", artifact.get("confidence", 0))),
+        ),
         ("Target Hint", artifact.get("target", "Unknown")),
         ("SDK Hint", artifact.get("sdk", "Unknown")),
         ("RTOS Hint", artifact.get("rtos", "None detected")),

@@ -135,7 +135,8 @@ def evaluate_benchmark_ci(benchmark_result, policy):
         if total < min_samples:
             continue
         left = int(bucket.split("-", 1)[0])
-        expected = left / 100.0
+        right = int(bucket.split("-", 1)[1])
+        expected = ((left + right) / 2.0) / 100.0
         empirical = float(entry.get("empirical_accuracy", 0.0))
         gap = abs(empirical - expected)
         if gap > max_gap:

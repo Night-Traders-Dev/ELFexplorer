@@ -117,6 +117,7 @@ def validate_rule_pack_schema(payload, source="pack"):
             seen_rule_ids.add(rule_id)
 
             matcher_signature = (
+                category,
                 tuple(sorted(all_of)),
                 tuple(sorted(any_of)),
                 tuple(sorted(regex_any)),
