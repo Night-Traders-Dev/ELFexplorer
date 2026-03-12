@@ -3,6 +3,7 @@ import shutil
 import urllib.request
 from pathlib import Path
 
+from advanced.plugins import load_rule_pack
 
 DEFAULT_SIGNATURE_DIR = Path.home() / ".elfexplorer" / "signatures"
 ACTIVE_SIGNATURE_FILENAME = "active-signatures.json"
@@ -24,11 +25,7 @@ def list_signature_packs(signature_dir=None):
 
 
 def load_signature_pack(path):
-    with Path(path).expanduser().open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Signature pack must be a JSON object: {path}")
-    return payload
+    return load_rule_pack(path)
 
 
 def load_active_signature_pack(signature_dir=None):

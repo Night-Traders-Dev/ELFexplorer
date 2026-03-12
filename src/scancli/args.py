@@ -124,6 +124,11 @@ def build_parser():
         help="Optional path to save benchmark results JSON.",
     )
     parser.add_argument(
+        "--benchmark-export-calibration",
+        default=None,
+        help="Optional path to save calibration model derived from benchmark reliability.",
+    )
+    parser.add_argument(
         "--diff",
         default=None,
         help="Compare the primary report against another binary path and print a diff report.",
@@ -158,5 +163,16 @@ def build_parser():
         choices=["generic", "ghidra", "ida", "rizin"],
         default="generic",
         help="Format for RE annotation export (used with --re-export).",
+    )
+    parser.add_argument(
+        "--re-merge-policy",
+        choices=["union", "prefer-import", "prefer-scan"],
+        default="union",
+        help="Merge policy when RE annotations are imported.",
+    )
+    parser.add_argument(
+        "--calibration-model",
+        default=None,
+        help="Path to confidence calibration model JSON to apply during scan.",
     )
     return parser

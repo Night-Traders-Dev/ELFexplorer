@@ -86,6 +86,8 @@ def print_plain_report(report, show_explain=False):
     print(f"{build_label} {scan_result.get('build_system', 'Unknown')}\n")
     print(f"{artifact_label} {artifact_profile.get('artifact_type', 'Unknown')}")
     print(f"{confidence_label} {artifact_profile.get('confidence', 0)}")
+    if "confidence_raw" in artifact_profile:
+        print(f"{styled('Raw Artifact Confidence:', STYLE_BOLD, FG_GREEN)} {artifact_profile.get('confidence_raw', 0)}")
     print(f"{target_label} {artifact_profile.get('target', 'Unknown')}")
     print(f"{sdk_label} {artifact_profile.get('sdk', 'Unknown')}")
     print(f"{rtos_label} {artifact_profile.get('rtos', 'None detected')}")
@@ -155,6 +157,11 @@ def print_plain_report(report, show_explain=False):
             pack_names = plugin_evidence.get("pack_names", [])
             if pack_names:
                 print(f"Active packs: {', '.join(pack_names)}")
+            diagnostics = plugin_evidence.get("diagnostics", [])
+            if diagnostics:
+                print("Pack diagnostics:")
+                for line in diagnostics:
+                    print(f"  - {line}")
             for category in ("languages", "compilers", "build_systems", "artifacts"):
                 hits = plugin_evidence.get(category, [])
                 if not hits:
@@ -163,8 +170,16 @@ def print_plain_report(report, show_explain=False):
                 for hit in hits:
                     print(
                         f"  - {hit.get('rule')}: target={hit.get('target')} "
-                        f"delta={hit.get('score_delta', 0)} sections={hit.get('sections')}"
+                        f"delta={hit.get('score_delta', 0)} sections={hit.get('sections')} "
+                        f"priority={hit.get('priority', 0)} op={hit.get('operation', 'add')}"
                     )
+        merged_re = scan_result.get("re_annotations_merged")
+        if merged_re:
+            print()
+            print(rule("Merged RE View", FG_YELLOW))
+            print(f"source={merged_re.get('source', 'unknown')} policy={merged_re.get('policy', 'union')}")
+            print(f"merged_symbol_count={merged_re.get('merged_symbol_count', 0)}")
+            print(f"imported_comment_count={merged_re.get('imported_comment_count', 0)}")
     print()
     print(styled("Completed binary scan.", STYLE_DIM, FG_CYAN))
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 DEFAULT_POLICY = {
     "min_artifact_confidence": 60,
+    "use_calibrated_confidence": True,
     "allow_ambiguous": False,
     "allow_unknown": False,
     "forbidden_compilers": [],
@@ -11,6 +12,14 @@ DEFAULT_POLICY = {
     "required_artifact_type": None,
     "required_language": None,
     "fail_on_hardening_flags": ["likely_packed"],
+    "benchmark_thresholds": {
+        "language_accuracy": 0.85,
+        "compiler_accuracy": 0.75,
+        "build_system_accuracy": 0.70,
+        "artifact_type_accuracy": 0.80,
+        "min_reliability_bin_samples": 3,
+        "max_reliability_gap": 0.35,
+    },
 }
 
 
@@ -42,6 +51,8 @@ def evaluate_reports_ci(reports, policy):
         build_system = scan.get("build_system", "Unknown")
         artifact_type = artifact.get("artifact_type", "Unknown")
         confidence = int(artifact.get("confidence", 0))
+        if policy.get("use_calibrated_confidence", True):
+            confidence = int(artifact.get("confidence_calibrated", confidence))
 
         min_conf = int(policy.get("min_artifact_confidence", 0))
         if confidence < min_conf:
@@ -96,3 +107,45 @@ def evaluate_reports_ci(reports, policy):
         "report_count": len(reports),
     }
 
+
+def evaluate_benchmark_ci(benchmark_result, policy):
+    thresholds = dict(DEFAULT_POLICY.get("benchmark_thresholds", {}))
+    thresholds.update(policy.get("benchmark_thresholds", {}))
+    metrics = benchmark_result.get("metrics", {})
+    reliability = benchmark_result.get("reliability_curve", {})
+    violations = []
+
+    def _check_metric(metric_key, threshold_key):
+        accuracy = float(metrics.get(metric_key, {}).get("accuracy", 0.0))
+        threshold = float(thresholds.get(threshold_key, 0.0))
+        if accuracy < threshold:
+            violations.append(
+                f"benchmark {metric_key} accuracy {accuracy:.4f} < threshold {threshold:.4f}"
+            )
+
+    _check_metric("language", "language_accuracy")
+    _check_metric("compiler", "compiler_accuracy")
+    _check_metric("build_system", "build_system_accuracy")
+    _check_metric("artifact_type", "artifact_type_accuracy")
+
+    min_samples = int(thresholds.get("min_reliability_bin_samples", 0))
+    max_gap = float(thresholds.get("max_reliability_gap", 1.0))
+    for bucket, entry in reliability.items():
+        total = int(entry.get("total", 0))
+        if total < min_samples:
+            continue
+        left = int(bucket.split("-", 1)[0])
+        expected = left / 100.0
+        empirical = float(entry.get("empirical_accuracy", 0.0))
+        gap = abs(empirical - expected)
+        if gap > max_gap:
+            violations.append(
+                f"benchmark reliability gap too high for bin {bucket}: "
+                f"empirical={empirical:.4f} expected~={expected:.4f} gap={gap:.4f}"
+            )
+
+    return {
+        "ok": not violations,
+        "violations": violations,
+        "thresholds": thresholds,
+    }

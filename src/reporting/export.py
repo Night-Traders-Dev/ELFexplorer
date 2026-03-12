@@ -96,6 +96,11 @@ def _append_advanced_profiles(lines, scan):
         pack_names = plugin_evidence.get("pack_names", [])
         if pack_names:
             lines.append(f"- Active Packs: {', '.join(pack_names)}")
+        diagnostics = plugin_evidence.get("diagnostics", [])
+        if diagnostics:
+            lines.append("- Diagnostics:")
+            for line in diagnostics:
+                lines.append(f"  - {line}")
         for category in ("languages", "compilers", "build_systems", "artifacts"):
             hits = plugin_evidence.get(category, [])
             if not hits:
@@ -104,7 +109,8 @@ def _append_advanced_profiles(lines, scan):
             for hit in hits:
                 lines.append(
                     f"  - `{hit.get('rule')}` target={hit.get('target')} "
-                    f"delta={hit.get('score_delta')} sections={hit.get('sections')}"
+                    f"delta={hit.get('score_delta')} sections={hit.get('sections')} "
+                    f"priority={hit.get('priority', 0)} op={hit.get('operation', 'add')}"
                 )
 
     if re_import:
@@ -114,6 +120,14 @@ def _append_advanced_profiles(lines, scan):
         lines.append(f"- Comments: `{len(re_import.get('comments', []))}`")
         lines.append(f"- Labels: `{len(re_import.get('labels', []))}`")
         lines.append(f"- Xrefs: `{len(re_import.get('xrefs', []))}`")
+
+    re_merged = scan.get("re_annotations_merged")
+    if re_merged:
+        lines.extend(["", "## Merged RE View", ""])
+        lines.append(f"- Merge Policy: `{re_merged.get('policy', 'union')}`")
+        lines.append(f"- Source: `{re_merged.get('source', 'unknown')}`")
+        lines.append(f"- Merged Symbols: `{re_merged.get('merged_symbol_count', 0)}`")
+        lines.append(f"- Imported Comments: `{re_merged.get('imported_comment_count', 0)}`")
 
 
 def report_to_markdown(report):
@@ -138,6 +152,7 @@ def report_to_markdown(report):
         f"| Build System | {scan.get('build_system', 'Unknown')} |",
         f"| Artifact Type | {artifact.get('artifact_type', 'Unknown')} |",
         f"| Artifact Confidence | {artifact.get('confidence', 0)} |",
+        f"| Artifact Confidence Raw | {artifact.get('confidence_raw', artifact.get('confidence', 0))} |",
         f"| Target Hint | {artifact.get('target', 'Unknown')} |",
         f"| SDK Hint | {artifact.get('sdk', 'Unknown')} |",
         f"| RTOS Hint | {artifact.get('rtos', 'None detected')} |",
@@ -265,6 +280,7 @@ def _summary_table_rows(report):
         ("Build System", scan.get("build_system", "Unknown")),
         ("Artifact Type", artifact.get("artifact_type", "Unknown")),
         ("Artifact Confidence", str(artifact.get("confidence", 0))),
+        ("Artifact Confidence Raw", str(artifact.get("confidence_raw", artifact.get("confidence", 0)))),
         ("Target Hint", artifact.get("target", "Unknown")),
         ("SDK Hint", artifact.get("sdk", "Unknown")),
         ("RTOS Hint", artifact.get("rtos", "None detected")),

@@ -11,13 +11,14 @@ from pathlib import Path
 
 import json
 
+from advanced.calibration import build_calibration_model, save_calibration_model
 from advanced.benchmark import (
     discover_benchmark_cases,
     load_benchmark_manifest,
     render_benchmark_summary,
     run_benchmark_cases,
 )
-from advanced.ci import evaluate_reports_ci, load_policy
+from advanced.ci import evaluate_benchmark_ci, evaluate_reports_ci, load_policy
 from advanced.diffing import compare_reports, diff_to_markdown, render_diff_plain
 from advanced.reinterop import export_re_payload
 from advanced.signatures import (
@@ -118,6 +119,19 @@ def main():
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 out_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
                 print(f"Saved benchmark report: {out_path}")
+            if args.benchmark_export_calibration:
+                model = build_calibration_model(result)
+                saved_model = save_calibration_model(model, args.benchmark_export_calibration)
+                print(f"Saved calibration model: {saved_model}")
+            if args.ci:
+                ci_result = evaluate_benchmark_ci(result, load_policy(args.policy_file))
+                if ci_result["ok"]:
+                    print("Benchmark CI policy passed.")
+                else:
+                    print("Benchmark CI policy failed:")
+                    for line in ci_result["violations"]:
+                        print(f"  - {line}")
+                    return 3
             return 0
 
         reports = collect_reports_from_args(args, scan_options=scan_options)

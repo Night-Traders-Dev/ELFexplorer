@@ -10,10 +10,9 @@ def load_re_annotations(path):
     return payload
 
 
-def normalize_re_annotations(payload):
-    source = str(payload.get("source") or payload.get("tool") or "unknown").lower()
+def _normalize_generic(payload):
     normalized = {
-        "source": source,
+        "source": str(payload.get("source") or payload.get("tool") or "unknown").lower(),
         "functions": [],
         "comments": [],
         "labels": [],
@@ -38,7 +37,69 @@ def normalize_re_annotations(payload):
 
     if isinstance(payload.get("xrefs"), list):
         normalized["xrefs"] = payload["xrefs"]
+    return normalized
 
+
+def _normalize_ghidra(payload):
+    base = _normalize_generic(payload)
+    gh = payload.get("ghidra", payload)
+    base["source"] = "ghidra"
+    if isinstance(gh.get("functions"), list):
+        base["functions"] = gh["functions"]
+    if isinstance(gh.get("comments"), list):
+        base["comments"] = gh["comments"]
+    if isinstance(gh.get("labels"), list):
+        base["labels"] = gh["labels"]
+    if isinstance(gh.get("xrefs"), list):
+        base["xrefs"] = gh["xrefs"]
+    return base
+
+
+def _normalize_ida(payload):
+    base = _normalize_generic(payload)
+    ida = payload.get("ida", payload)
+    base["source"] = "ida"
+    if isinstance(ida.get("functions"), list):
+        base["functions"] = ida["functions"]
+    if isinstance(ida.get("comments"), list):
+        base["comments"] = ida["comments"]
+    if isinstance(ida.get("names"), list):
+        base["labels"] = ida["names"]
+    elif isinstance(ida.get("labels"), list):
+        base["labels"] = ida["labels"]
+    return base
+
+
+def _normalize_rizin(payload):
+    base = _normalize_generic(payload)
+    rz = payload.get("rizin", payload)
+    base["source"] = "rizin"
+    if isinstance(rz.get("functions"), list):
+        base["functions"] = rz["functions"]
+    elif isinstance(rz.get("aflj"), list):
+        base["functions"] = rz["aflj"]
+    if isinstance(rz.get("comments"), list):
+        base["comments"] = rz["comments"]
+    if isinstance(rz.get("flags"), list):
+        base["labels"] = rz["flags"]
+    return base
+
+
+def normalize_re_annotations(payload):
+    source = str(payload.get("source") or payload.get("tool") or payload.get("format") or "unknown").lower()
+    if source == "ghidra":
+        return _normalize_ghidra(payload)
+    if source == "ida":
+        return _normalize_ida(payload)
+    if source in {"rizin", "radare2", "rz"}:
+        return _normalize_rizin(payload)
+    normalized = _normalize_generic(payload)
+    if "ghidra" in payload:
+        return _normalize_ghidra(payload)
+    if "ida" in payload:
+        return _normalize_ida(payload)
+    if "rizin" in payload:
+        return _normalize_rizin(payload)
     return normalized
 
 
@@ -63,24 +124,39 @@ def build_re_export_payload(report, export_format="generic"):
     }
 
     if export_format == "ghidra":
-        payload["ghidra_tags"] = {
-            "language_guess": scan.get("source_language", "Unknown"),
-            "compiler_guess": scan.get("compiler", "Unknown"),
-            "artifact_guess": artifact.get("artifact_type", "Unknown"),
+        payload["source"] = "ghidra"
+        payload["ghidra"] = {
+            "tags": {
+                "language_guess": scan.get("source_language", "Unknown"),
+                "compiler_guess": scan.get("compiler", "Unknown"),
+                "artifact_guess": artifact.get("artifact_type", "Unknown"),
+            },
+            "functions": scan.get("binary_map", {}).get("symbols", [])[:300],
+            "comments": [
+                {"address": scan.get("binary_map", {}).get("entry_point", 0), "text": "ELFexplorer entrypoint"}
+            ],
         }
     elif export_format == "ida":
-        payload["ida_comments"] = [
-            f"ELFexplorer language={scan.get('source_language', 'Unknown')}",
-            f"ELFexplorer compiler={scan.get('compiler', 'Unknown')}",
-            f"ELFexplorer build={scan.get('build_system', 'Unknown')}",
-            f"ELFexplorer artifact={artifact.get('artifact_type', 'Unknown')}",
-        ]
+        payload["source"] = "ida"
+        payload["ida"] = {
+            "comments": [
+                f"ELFexplorer language={scan.get('source_language', 'Unknown')}",
+                f"ELFexplorer compiler={scan.get('compiler', 'Unknown')}",
+                f"ELFexplorer build={scan.get('build_system', 'Unknown')}",
+                f"ELFexplorer artifact={artifact.get('artifact_type', 'Unknown')}",
+            ],
+            "names": scan.get("binary_map", {}).get("symbols", [])[:300],
+        }
     elif export_format == "rizin":
-        payload["rizin_meta"] = {
-            "analysis.language": scan.get("source_language", "Unknown"),
-            "analysis.compiler": scan.get("compiler", "Unknown"),
-            "analysis.build_system": scan.get("build_system", "Unknown"),
-            "analysis.artifact": artifact.get("artifact_type", "Unknown"),
+        payload["source"] = "rizin"
+        payload["rizin"] = {
+            "meta": {
+                "analysis.language": scan.get("source_language", "Unknown"),
+                "analysis.compiler": scan.get("compiler", "Unknown"),
+                "analysis.build_system": scan.get("build_system", "Unknown"),
+                "analysis.artifact": artifact.get("artifact_type", "Unknown"),
+            },
+            "aflj": scan.get("binary_map", {}).get("symbols", [])[:300],
         }
     return payload
 
@@ -93,3 +169,30 @@ def export_re_payload(report, path, export_format="generic"):
         json.dump(payload, handle, indent=2, sort_keys=True)
     return out_path
 
+
+def merge_scan_and_re_annotations(scan_result, normalized_annotations, policy="union"):
+    policy = str(policy or "union").strip().lower()
+    if policy not in {"union", "prefer-import", "prefer-scan"}:
+        raise ValueError("re merge policy must be one of: union, prefer-import, prefer-scan")
+
+    scan_map = dict(scan_result.get("binary_map", {}))
+    scan_symbols = list(scan_map.get("symbols", []))
+    imported_functions = list(normalized_annotations.get("functions", []))
+    imported_labels = list(normalized_annotations.get("labels", []))
+    imported_comments = list(normalized_annotations.get("comments", []))
+
+    if policy == "prefer-import":
+        merged_symbols = imported_functions or imported_labels
+    elif policy == "prefer-scan":
+        merged_symbols = scan_symbols
+    else:
+        merged_symbols = scan_symbols + imported_functions + imported_labels
+
+    return {
+        "policy": policy,
+        "source": normalized_annotations.get("source", "unknown"),
+        "merged_symbol_count": len(merged_symbols),
+        "imported_comment_count": len(imported_comments),
+        "symbols": merged_symbols[:500],
+        "comments": imported_comments[:500],
+    }

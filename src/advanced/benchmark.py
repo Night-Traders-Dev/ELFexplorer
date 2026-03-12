@@ -9,6 +9,11 @@ FILENAME_LANGUAGE_MAP = {
     "asm": "ASM",
     "c": "C",
     "cpp": "C++",
+    "cc": "C++",
+    "cxx": "C++",
+    "cs": "C#",
+    "csharp": "C#",
+    "dotnet": "C#",
     "go": "Go",
     "rust": "Rust",
     "dart": "Dart",
@@ -18,16 +23,74 @@ FILENAME_LANGUAGE_MAP = {
     "sagelang": "SageLang",
 }
 
+FILENAME_COMPILER_MAP = {
+    "gcc": "GCC",
+    "clang": "Clang",
+    "rustc": "Rustc",
+    "go": "Go gc",
+    "tinycc": "TinyCC",
+    "tcc": "TinyCC",
+    "nasm": "NASM",
+    "fasm": "FASM",
+    "masm": "MASM",
+    "tasm": "TASM",
+    "zig": "Zig",
+}
+
+FILENAME_BUILD_SYSTEM_MAP = {
+    "cmake": "CMake",
+    "meson": "Meson",
+    "bazel": "Bazel",
+    "cargo": "Cargo",
+    "make": "Make",
+    "ninja": "Ninja",
+    "scons": "SCons",
+    "xmake": "XMake",
+    "buck2": "Buck2",
+    "platformio": "PlatformIO",
+    "idf": "ESP-IDF",
+    "espidf": "ESP-IDF",
+    "zephyr": "Zephyr West",
+    "pico": "Pico SDK",
+}
+
+ARCH_ALIASES = {
+    "x86_64": "x86_64",
+    "x86": "x86",
+    "arm32": "arm32",
+    "arm": "arm32",
+    "aarch64": "aarch64",
+    "rv64": "rv64",
+    "riscv64": "rv64",
+    "rv32": "rv32",
+    "riscv32": "rv32",
+}
+
 
 def _parse_expected_from_filename(path):
-    stem = Path(path).stem.lower()
-    if "_" not in stem:
-        return {}
-    suffix = stem.rsplit("_", 1)[-1]
-    language = FILENAME_LANGUAGE_MAP.get(suffix)
-    if not language:
-        return {}
-    return {"language": language}
+    item = Path(path)
+    stem = item.stem.lower()
+    expected = {}
+
+    parts = [token for token in stem.split("_") if token]
+    if len(parts) >= 2:
+        lang_token = parts[-1]
+        language = FILENAME_LANGUAGE_MAP.get(lang_token)
+        if language:
+            expected["language"] = language
+        for token in parts:
+            compiler = FILENAME_COMPILER_MAP.get(token)
+            if compiler and "compiler" not in expected:
+                expected["compiler"] = compiler
+            build = FILENAME_BUILD_SYSTEM_MAP.get(token)
+            if build and "build_system" not in expected:
+                expected["build_system"] = build
+
+    parent = item.parent.name.lower()
+    arch = ARCH_ALIASES.get(parent)
+    if arch:
+        expected["architecture"] = arch
+    return expected
 
 
 def load_benchmark_manifest(path):
@@ -111,13 +174,65 @@ def _finalize_metrics(state):
     }
 
 
-def run_benchmark_cases(cases, scan_func):
+def _init_arch_state():
+    return defaultdict(lambda: {"total": 0, "correct": 0})
+
+
+def _update_arch_state(state, arch, match):
+    label = arch or "unknown"
+    state[label]["total"] += 1
+    if match:
+        state[label]["correct"] += 1
+
+
+def _finalize_arch_state(state):
+    finalized = {}
+    for arch, entry in sorted(state.items()):
+        total = int(entry["total"])
+        correct = int(entry["correct"])
+        finalized[arch] = {
+            "total": total,
+            "correct": correct,
+            "accuracy": round((correct / total) if total else 0.0, 4),
+        }
+    return finalized
+
+
+def _confidence_bin(confidence, bins):
+    value = max(0, min(99, int(confidence)))
+    width = max(1, int(100 / bins))
+    left = (value // width) * width
+    right = min(100, left + width)
+    return f"{left:02d}-{right:02d}"
+
+
+def _finalize_reliability(state):
+    out = {}
+    for bucket, entry in sorted(state.items()):
+        total = int(entry["total"])
+        correct = int(entry["correct"])
+        out[bucket] = {
+            "total": total,
+            "correct": correct,
+            "empirical_accuracy": round((correct / total) if total else 0.0, 4),
+        }
+    return out
+
+
+def run_benchmark_cases(cases, scan_func, reliability_bins=10):
     metrics = {
         "language": _init_metric_state(),
         "compiler": _init_metric_state(),
         "build_system": _init_metric_state(),
         "artifact_type": _init_metric_state(),
     }
+    per_arch = {
+        "language": _init_arch_state(),
+        "compiler": _init_arch_state(),
+        "build_system": _init_arch_state(),
+        "artifact_type": _init_arch_state(),
+    }
+    reliability = defaultdict(lambda: {"total": 0, "correct": 0})
     per_case = []
 
     for case in cases:
@@ -139,20 +254,38 @@ def run_benchmark_cases(cases, scan_func):
             "compiler": scan.get("compiler", "Unknown"),
             "build_system": scan.get("build_system", "Unknown"),
             "artifact_type": artifact.get("artifact_type", "Unknown"),
+            "artifact_confidence": int(artifact.get("confidence", 0)),
         }
 
         case_result = {"path": path, "expected": expected, "observed": observed, "matches": {}}
+        arch = expected.get("architecture")
         for key in ("language", "compiler", "build_system", "artifact_type"):
             if key not in expected:
                 continue
             exp_value = expected[key]
             obs_value = observed[key]
             _update_metric_state(metrics[key], exp_value, obs_value)
-            case_result["matches"][key] = (exp_value == obs_value)
+            matched = exp_value == obs_value
+            case_result["matches"][key] = matched
+            _update_arch_state(per_arch[key], arch, matched)
+            if key == "artifact_type":
+                bucket = _confidence_bin(observed["artifact_confidence"], reliability_bins)
+                reliability[bucket]["total"] += 1
+                if matched:
+                    reliability[bucket]["correct"] += 1
         per_case.append(case_result)
 
     finalized = {key: _finalize_metrics(value) for key, value in metrics.items()}
-    return {"cases": per_case, "metrics": finalized, "case_count": len(per_case)}
+    per_arch_metrics = {key: _finalize_arch_state(value) for key, value in per_arch.items()}
+    reliability_curve = _finalize_reliability(reliability)
+    return {
+        "cases": per_case,
+        "metrics": finalized,
+        "per_arch_metrics": per_arch_metrics,
+        "reliability_curve": reliability_curve,
+        "reliability_bins": reliability_bins,
+        "case_count": len(per_case),
+    }
 
 
 def render_benchmark_summary(result):
@@ -164,4 +297,12 @@ def render_benchmark_summary(result):
             f"  {key}: accuracy={entry.get('accuracy', 0.0):.4f} "
             f"({entry.get('correct', 0)}/{entry.get('total', 0)})"
         )
+    reliability = result.get("reliability_curve", {})
+    if reliability:
+        lines.append("  reliability (artifact confidence bins):")
+        for bucket, entry in reliability.items():
+            lines.append(
+                f"    {bucket}: empirical_accuracy={entry.get('empirical_accuracy', 0.0):.4f} "
+                f"({entry.get('correct', 0)}/{entry.get('total', 0)})"
+            )
     return "\n".join(lines)

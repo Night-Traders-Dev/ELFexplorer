@@ -282,12 +282,16 @@ def run_textual_report(report: Dict):
                 pack_names = plugin_evidence.get("pack_names", [])
                 if pack_names:
                     evidence_lines.append(f"- active_packs: {', '.join(pack_names)}")
+                diagnostics = plugin_evidence.get("diagnostics", [])
+                for line in diagnostics:
+                    evidence_lines.append(f"  - diagnostic: {line}")
                 for category in ("languages", "compilers", "build_systems", "artifacts"):
                     hits = plugin_evidence.get(category, [])
                     for hit in hits:
                         evidence_lines.append(
                             f"  - {category}: rule={hit.get('rule')} target={hit.get('target')} "
-                            f"delta={hit.get('score_delta')}"
+                            f"delta={hit.get('score_delta')} "
+                            f"priority={hit.get('priority', 0)} op={hit.get('operation', 'add')}"
                         )
 
             re_import = scan.get("re_annotations_imported")
@@ -301,6 +305,19 @@ def run_textual_report(report: Dict):
                         f"- comments: {len(re_import.get('comments', []))}",
                         f"- labels: {len(re_import.get('labels', []))}",
                         f"- xrefs: {len(re_import.get('xrefs', []))}",
+                    ]
+                )
+
+            re_merged = scan.get("re_annotations_merged")
+            if re_merged:
+                evidence_lines.extend(
+                    [
+                        "",
+                        "Merged RE view:",
+                        f"- merge_policy: {re_merged.get('policy', 'union')}",
+                        f"- source: {re_merged.get('source', 'unknown')}",
+                        f"- merged_symbol_count: {re_merged.get('merged_symbol_count', 0)}",
+                        f"- imported_comment_count: {re_merged.get('imported_comment_count', 0)}",
                     ]
                 )
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from advanced.calibration import load_calibration_model
 from advanced.plugins import load_rule_pack, merge_rule_packs
 from advanced.reinterop import load_re_annotations
 from advanced.signatures import load_active_signature_pack
@@ -37,10 +38,15 @@ def build_scan_options(args):
     re_annotations = None
     if getattr(args, "re_import", None):
         re_annotations = load_re_annotations(args.re_import)
+    calibration_model = None
+    if getattr(args, "calibration_model", None):
+        calibration_model = load_calibration_model(args.calibration_model)
 
     return {
         "plugin_rules": merged_pack,
         "re_annotations": re_annotations,
+        "re_merge_policy": getattr(args, "re_merge_policy", "union"),
+        "calibration_model": calibration_model,
     }
 
 

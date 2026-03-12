@@ -5,12 +5,13 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
+from advanced.calibration import calibrate_confidence
 from advanced.explain import build_scan_explanations
 from advanced.firmware import detect_firmware_fingerprint
 from advanced.hardening import detect_binary_hardening
 from advanced.mixed import detect_mixed_attribution
 from advanced.plugins import PLUGIN_CATEGORIES, apply_score_rules
-from advanced.reinterop import normalize_re_annotations
+from advanced.reinterop import merge_scan_and_re_annotations, normalize_re_annotations
 from baremetal import (
     is_intel_hex_file,
     is_raw_firmware_bin_file,
@@ -151,6 +152,9 @@ def _apply_plugins_to_scores(elf, score_map_by_category, plugin_rules):
     pack_names = plugin_rules.get("_pack_names", [])
     if pack_names:
         evidence["pack_names"] = list(pack_names)
+    diagnostics = plugin_rules.get("_diagnostics", [])
+    if diagnostics:
+        evidence["diagnostics"] = list(diagnostics)
     return evidence
 
 
@@ -158,6 +162,8 @@ def scan_heuristics(elf, options=None):
     options = options or {}
     plugin_rules = options.get("plugin_rules")
     imported_re_annotations = options.get("re_annotations")
+    re_merge_policy = options.get("re_merge_policy", "union")
+    calibration_model = options.get("calibration_model")
     artifact_profile = detect_artifact_profile(elf, emit_report=False)
     source_language, language_scores = detect_source_language(
         elf,
@@ -213,11 +219,24 @@ def scan_heuristics(elf, options=None):
         "firmware_fingerprint": firmware_fingerprint,
         "binary_map": binary_map,
     }
+    if calibration_model and "confidence" in artifact_profile:
+        raw_confidence = int(artifact_profile.get("confidence", 0))
+        calibrated = calibrate_confidence(raw_confidence, calibration_model)
+        artifact_profile["confidence_raw"] = raw_confidence
+        artifact_profile["confidence_calibrated"] = calibrated
+        artifact_profile["confidence"] = calibrated
+        result["calibration_applied"] = True
     result["explanations"] = build_scan_explanations(result)
     if plugin_evidence:
         result["plugin_evidence"] = plugin_evidence
     if imported_re_annotations:
-        result["re_annotations_imported"] = normalize_re_annotations(imported_re_annotations)
+        normalized = normalize_re_annotations(imported_re_annotations)
+        result["re_annotations_imported"] = normalized
+        result["re_annotations_merged"] = merge_scan_and_re_annotations(
+            result,
+            normalized,
+            policy=re_merge_policy,
+        )
     return result
 
 
