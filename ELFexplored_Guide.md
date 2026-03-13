@@ -533,6 +533,7 @@ Behavior:
 - CLI/headless-friendly tools can run commands directly from the workbench and stream results into the output log
 - GUI-centric tools are launched from the workbench, but remain external windows rather than embedded terminal panes
 - when a scan report is available, the workbench can export the matching integration script for the selected tool
+- clicking or navigating the tool catalog changes the active tool immediately, then refreshes presets, launch state, and command context for that integration
 
 Built-in presets currently focus on stable command-line tools:
 - `radare2`: file info, sections, symbols, functions, strings

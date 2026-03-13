@@ -197,6 +197,16 @@ class ToolWorkbenchScreenFactory:
                     args = [token.replace("{file}", target_path) for token in args]
                 return " ".join(args)
 
+            def _set_active_tool_index(self, row_index: int) -> None:
+                if row_index < 0 or row_index >= len(self._tool_keys):
+                    return
+                tool_key = self._tool_keys[row_index]
+                if tool_key == self.current_tool_key:
+                    return
+                self.current_tool_key = tool_key
+                self.query_one("#tool_args", Input).value = ""
+                self._refresh_model()
+
             def _refresh_model(self) -> None:
                 model = get_external_tool_workbench_model(
                     self.current_tool_key,
@@ -364,10 +374,27 @@ class ToolWorkbenchScreenFactory:
                 table_id = event.data_table.id
                 row_index = int(event.coordinate.row)
                 if table_id == "tool_list":
-                    if 0 <= row_index < len(self._tool_keys):
-                        self.current_tool_key = self._tool_keys[row_index]
-                        self.query_one("#tool_args", Input).value = ""
-                        self._refresh_model()
+                    self._set_active_tool_index(row_index)
+                elif table_id == "tool_presets":
+                    preset = self._selected_preset()
+                    if preset:
+                        self.query_one("#tool_args", Input).value = self._resolved_preset_text(preset)
+
+            def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+                table_id = event.data_table.id
+                row_index = int(event.cursor_row)
+                if table_id == "tool_list":
+                    self._set_active_tool_index(row_index)
+                elif table_id == "tool_presets":
+                    preset = self._selected_preset()
+                    if preset:
+                        self.query_one("#tool_args", Input).value = self._resolved_preset_text(preset)
+
+            def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+                table_id = event.data_table.id
+                row_index = int(event.cursor_row)
+                if table_id == "tool_list":
+                    self._set_active_tool_index(row_index)
                 elif table_id == "tool_presets":
                     preset = self._selected_preset()
                     if preset:
