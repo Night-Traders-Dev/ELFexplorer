@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11.7 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.11.8 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {
@@ -615,6 +615,17 @@ def _find_tool_path(tool_key):
         if path.exists():
             return {"path": str(path), "source": "hint"}
     return None
+
+
+def _resolve_override_candidate(executable_override):
+    if not executable_override:
+        return None
+    candidate = Path(str(executable_override)).expanduser()
+    return {
+        "requested_path": str(candidate),
+        "path": str(candidate) if candidate.exists() else None,
+        "source": "override" if candidate.exists() else "override-missing",
+    }
 
 
 def _build_command_for_recipe(manager_key, recipe, interactive=False):
@@ -1356,19 +1367,20 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False, event_cb=N
     }
 
 
-def get_external_tool_status(tool_key, environment=None):
+def get_external_tool_status(tool_key, environment=None, executable_override=None):
     if tool_key not in THIRD_PARTY_TOOLS:
         raise ValueError(f"Unsupported external tool '{tool_key}'.")
     environment = environment or detect_host_environment()
     meta = THIRD_PARTY_TOOLS[tool_key]
-    found = _find_tool_path(tool_key)
+    override = _resolve_override_candidate(executable_override)
+    found = override if override and override.get("path") else _find_tool_path(tool_key)
     install_command, manager_key = build_install_command(tool_key, environment=environment, interactive=True)
     status = {
         "key": tool_key,
         "label": meta["label"],
         "installed": bool(found),
-        "path": found["path"] if found else None,
-        "detected_via": found["source"] if found else None,
+        "path": found["path"] if found else (override.get("requested_path") if override else None),
+        "detected_via": found["source"] if found else (override.get("source") if override else None),
         "version": _probe_version(found["path"], meta.get("version_args")) if found else None,
         "install_supported": bool(install_command),
         "install_manager": manager_key,
@@ -1381,6 +1393,8 @@ def get_external_tool_status(tool_key, environment=None):
         "portable_install_supported": _portable_install_supported(tool_key, environment=environment),
         "local_tool_root": str((LOCAL_TOOLS_ROOT / tool_key).expanduser()),
         "local_bin_root": str(LOCAL_BIN_ROOT.expanduser()),
+        "override_active": bool(override),
+        "override_path": override.get("requested_path") if override else None,
     }
     return status
 
@@ -1433,16 +1447,21 @@ def _normalize_tool_args(args):
     return [str(item) for item in args]
 
 
-def get_external_tool_workbench_model(tool_key, target_path=None, environment=None):
+def get_external_tool_workbench_model(tool_key, target_path=None, environment=None, executable_override=None):
     if tool_key not in THIRD_PARTY_TOOLS:
         raise ValueError(f"Unsupported external tool '{tool_key}'.")
     environment = environment or detect_host_environment()
-    status = get_external_tool_status(tool_key, environment=environment)
+    status = get_external_tool_status(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
     profile = _get_tool_workbench_profile(tool_key)
     return {
         "tool_key": tool_key,
         "status": status,
         "target_path": str(Path(target_path).expanduser()) if target_path else "",
+        "executable_override": str(Path(executable_override).expanduser()) if executable_override else "",
         "cli_friendly": bool(profile.get("cli_friendly")),
         "launch_args": list(profile.get("launch_args", [])),
         "presets": list_external_tool_presets(tool_key),
@@ -1457,9 +1476,14 @@ def run_external_tool_command(
     environment=None,
     event_cb=None,
     cwd=None,
+    executable_override=None,
 ):
     environment = environment or detect_host_environment()
-    status = get_external_tool_status(tool_key, environment=environment)
+    status = get_external_tool_status(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
     if not status.get("installed"):
         _emit_tool_event(
             event_cb,
@@ -1555,9 +1579,14 @@ def launch_external_tool(
     environment=None,
     event_cb=None,
     cwd=None,
+    executable_override=None,
 ):
     environment = environment or detect_host_environment()
-    status = get_external_tool_status(tool_key, environment=environment)
+    status = get_external_tool_status(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
     if not status.get("installed"):
         _emit_tool_event(
             event_cb,

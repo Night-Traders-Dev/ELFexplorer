@@ -353,6 +353,30 @@ class ToolingTests(unittest.TestCase):
         self.assertIn("run-firmware", preset_keys)
         self.assertIn("gdb-server", preset_keys)
 
+    def test_bramble_workbench_model_accepts_executable_override(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        with mock.patch("advanced.tooling.Path.exists", return_value=True), mock.patch(
+            "advanced.tooling._probe_version",
+            return_value="Bramble test version",
+        ):
+            model = tooling.get_external_tool_workbench_model(
+                "bramble",
+                target_path="/tmp/fw.uf2",
+                environment=environment,
+                executable_override="/opt/bramble/bin/bramble",
+            )
+
+        self.assertEqual(model["status"]["path"], "/opt/bramble/bin/bramble")
+        self.assertEqual(model["status"]["detected_via"], "override")
+        self.assertTrue(model["status"]["override_active"])
+
     def test_install_external_tool_uses_source_build_for_bramble(self):
         environment = {
             "os": "linux",
@@ -426,6 +450,36 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-net-uart0") + 1], "9999")
         self.assertEqual(args[args.index("-wire-gpio") + 1], "/tmp/gpio.sock")
         self.assertIn("-jit", args)
+
+    def test_run_external_tool_command_dry_run_uses_executable_override(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        status = {
+            "key": "bramble",
+            "label": "Bramble",
+            "installed": True,
+            "path": "/opt/bramble/bin/bramble",
+            "version": "test",
+            "override_active": True,
+            "override_path": "/opt/bramble/bin/bramble",
+        }
+        with mock.patch("advanced.tooling.get_external_tool_status", return_value=status):
+            result = tooling.run_external_tool_command(
+                "bramble",
+                args=["/tmp/fw.uf2", "-gdb"],
+                dry_run=True,
+                environment=environment,
+                executable_override="/opt/bramble/bin/bramble",
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["command"][0], "/opt/bramble/bin/bramble")
 
     def test_render_bramble_feature_lines_contains_expected_sections(self):
         lines = tooling.render_bramble_feature_lines()

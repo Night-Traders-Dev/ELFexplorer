@@ -50,14 +50,21 @@ class BrambleScreenFactory:
                 margin-bottom: 1;
             }
             #bramble_controls {
-                width: 46;
-                min-width: 38;
+                height: auto;
+                min-height: 100%;
                 border: round $secondary;
                 padding: 0 1;
+            }
+            #bramble_controls_scroll {
+                width: 46;
+                min-width: 38;
+                height: 1fr;
+                border: round $secondary;
                 margin-right: 1;
             }
             #bramble_console {
                 width: 1fr;
+                height: 1fr;
                 border: round $secondary;
                 padding: 0 1;
             }
@@ -128,40 +135,46 @@ class BrambleScreenFactory:
                     with TabPane("Session"):
                         yield Static("", id="bramble_status")
                         with Horizontal():
-                            with Vertical(id="bramble_controls"):
-                                yield Static("Run Settings", classes="bramble_pane_title")
-                                yield Input(
-                                    value=self.current_target_path,
-                                    placeholder="Target UF2 or ELF path",
-                                    id="bramble_target",
-                                    classes="bramble_input",
-                                )
-                                yield Input(placeholder="Clock MHz (example: 125)", id="bramble_clock", classes="bramble_input")
-                                yield Input(value="3333", placeholder="GDB port", id="bramble_gdb_port", classes="bramble_input")
-                                yield Input(placeholder="Flash image path", id="bramble_flash", classes="bramble_input")
-                                yield Input(placeholder="Mount directory", id="bramble_mount", classes="bramble_input")
-                                yield Input(placeholder="SD card image path", id="bramble_sdcard", classes="bramble_input")
-                                yield Input(placeholder="SD card size MiB", id="bramble_sdcard_size", classes="bramble_input")
-                                yield Input(placeholder="eMMC image path", id="bramble_emmc", classes="bramble_input")
-                                yield Input(placeholder="eMMC size MiB", id="bramble_emmc_size", classes="bramble_input")
-                                yield Input(placeholder="UART0 TCP port", id="bramble_uart0_port", classes="bramble_input")
-                                yield Input(placeholder="UART0 connect host:port", id="bramble_uart0_connect", classes="bramble_input")
-                                yield Input(placeholder="Wire UART0 socket path", id="bramble_wire_uart0", classes="bramble_input")
-                                yield Input(placeholder="Wire GPIO socket path", id="bramble_wire_gpio", classes="bramble_input")
-                                yield Checkbox("stdin -> UART0", id="bramble_stdin", classes="bramble_check")
-                                yield Checkbox("Core 1 debug", id="bramble_debug1", classes="bramble_check")
-                                yield Checkbox("Debug unmapped memory", id="bramble_debug_mem", classes="bramble_check")
-                                yield Checkbox("Disable boot2", id="bramble_no_boot2", classes="bramble_check")
-                                yield Checkbox("Enable JIT", id="bramble_jit", classes="bramble_check")
-                                with Horizontal(id="bramble_actions"):
-                                    yield Button("Run", id="bramble_btn_run", variant="primary")
-                                    yield Button("Debug", id="bramble_btn_debug", variant="warning")
-                                    yield Button("ASM", id="bramble_btn_asm", variant="warning")
-                                    yield Button("Status", id="bramble_btn_status")
-                                with Horizontal(id="bramble_actions_2"):
-                                    yield Button("GDB", id="bramble_btn_gdb", variant="success")
-                                    yield Button("Launch App", id="bramble_btn_launch")
-                                    yield Button("Clear", id="bramble_btn_clear")
+                            with VerticalScroll(id="bramble_controls_scroll"):
+                                with Vertical(id="bramble_controls"):
+                                    yield Static("Run Settings", classes="bramble_pane_title")
+                                    yield Input(
+                                        placeholder="Bramble executable path (optional override)",
+                                        id="bramble_executable",
+                                        classes="bramble_input",
+                                    )
+                                    yield Input(
+                                        value=self.current_target_path,
+                                        placeholder="Target UF2 or ELF path",
+                                        id="bramble_target",
+                                        classes="bramble_input",
+                                    )
+                                    yield Input(placeholder="Clock MHz (example: 125)", id="bramble_clock", classes="bramble_input")
+                                    yield Input(value="3333", placeholder="GDB port", id="bramble_gdb_port", classes="bramble_input")
+                                    yield Input(placeholder="Flash image path", id="bramble_flash", classes="bramble_input")
+                                    yield Input(placeholder="Mount directory", id="bramble_mount", classes="bramble_input")
+                                    yield Input(placeholder="SD card image path", id="bramble_sdcard", classes="bramble_input")
+                                    yield Input(placeholder="SD card size MiB", id="bramble_sdcard_size", classes="bramble_input")
+                                    yield Input(placeholder="eMMC image path", id="bramble_emmc", classes="bramble_input")
+                                    yield Input(placeholder="eMMC size MiB", id="bramble_emmc_size", classes="bramble_input")
+                                    yield Input(placeholder="UART0 TCP port", id="bramble_uart0_port", classes="bramble_input")
+                                    yield Input(placeholder="UART0 connect host:port", id="bramble_uart0_connect", classes="bramble_input")
+                                    yield Input(placeholder="Wire UART0 socket path", id="bramble_wire_uart0", classes="bramble_input")
+                                    yield Input(placeholder="Wire GPIO socket path", id="bramble_wire_gpio", classes="bramble_input")
+                                    yield Checkbox("stdin -> UART0", id="bramble_stdin", classes="bramble_check")
+                                    yield Checkbox("Core 1 debug", id="bramble_debug1", classes="bramble_check")
+                                    yield Checkbox("Debug unmapped memory", id="bramble_debug_mem", classes="bramble_check")
+                                    yield Checkbox("Disable boot2", id="bramble_no_boot2", classes="bramble_check")
+                                    yield Checkbox("Enable JIT", id="bramble_jit", classes="bramble_check")
+                                    with Horizontal(id="bramble_actions"):
+                                        yield Button("Run", id="bramble_btn_run", variant="primary")
+                                        yield Button("Debug", id="bramble_btn_debug", variant="warning")
+                                        yield Button("ASM", id="bramble_btn_asm", variant="warning")
+                                        yield Button("Status", id="bramble_btn_status")
+                                    with Horizontal(id="bramble_actions_2"):
+                                        yield Button("GDB", id="bramble_btn_gdb", variant="success")
+                                        yield Button("Launch App", id="bramble_btn_launch")
+                                        yield Button("Clear", id="bramble_btn_clear")
                             with Vertical(id="bramble_console"):
                                 yield Static("Command Preview", classes="bramble_pane_title")
                                 yield Static("", id="bramble_preview")
@@ -188,6 +201,10 @@ class BrambleScreenFactory:
             def _selected_target_path(self) -> str | None:
                 value = self.query_one("#bramble_target", Input).value.strip()
                 self.current_target_path = value
+                return value or None
+
+            def _selected_executable_path(self) -> str | None:
+                value = self.query_one("#bramble_executable", Input).value.strip()
                 return value or None
 
             def _checkbox(self, widget_id: str) -> bool:
@@ -224,7 +241,11 @@ class BrambleScreenFactory:
                 )
 
             def _refresh_status(self) -> None:
-                model = get_external_tool_workbench_model("bramble", target_path=self._selected_target_path())
+                model = get_external_tool_workbench_model(
+                    "bramble",
+                    target_path=self._selected_target_path(),
+                    executable_override=self._selected_executable_path(),
+                )
                 status = model["status"]
                 install_mode = (
                     "one-click source build"
@@ -235,6 +256,7 @@ class BrambleScreenFactory:
                     f"Tool: {status['label']} (bramble)",
                     f"Installed: {'yes' if status['installed'] else 'no'}",
                     f"Executable: {status.get('path') or 'not found'}",
+                    f"Executable override: {status.get('override_path') or 'auto-detect'}",
                     f"Version: {status.get('version') or 'unknown'}",
                     f"Host install path: {install_mode}",
                     f"Homepage: {status.get('homepage') or 'n/a'}",
@@ -248,7 +270,8 @@ class BrambleScreenFactory:
             def _refresh_preview(self, mode: str = "run") -> None:
                 try:
                     args = self._build_args(mode=mode)
-                    preview = shlex.join(["bramble", *args])
+                    executable = self._selected_executable_path() or "bramble"
+                    preview = shlex.join([executable, *args])
                 except Exception as exc:
                     preview = f"Configure a target firmware path to enable Bramble. ({exc})"
                 self.query_one("#bramble_preview", Static).update(preview)
@@ -346,6 +369,7 @@ class BrambleScreenFactory:
                         "bramble",
                         args=args,
                         event_cb=emit,
+                        executable_override=self._selected_executable_path(),
                     )
 
                 self._refresh_preview(mode=mode)
@@ -364,6 +388,7 @@ class BrambleScreenFactory:
                         "bramble",
                         args=args,
                         event_cb=emit,
+                        executable_override=self._selected_executable_path(),
                     )
 
                 self._refresh_preview(mode="run")

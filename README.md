@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.7-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.8-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,12 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.8
+
+- Made the dedicated Bramble session page scrollable so the full control surface remains usable on smaller terminals.
+- Added a Bramble executable override field so users can point ELFexplorer at a specific `bramble` binary location.
+- Routed Bramble status, preview, run, and launch paths through the selected executable override when provided.
 
 ## What Changed in 0.11.7
 
@@ -498,6 +504,8 @@ ELFexplorer also includes a dedicated Bramble screen for RP2040 firmware workflo
 
 It provides:
 - a Bramble-specific session tab with structured controls instead of raw flags
+- a scrollable settings pane so long Bramble forms remain accessible
+- an executable override field for selecting a non-default `bramble` binary location
 - command preview generated from form fields
 - emulator run modes for firmware run, debug, ASM trace, status, and GDB server
 - flash / mount / SD / eMMC / UART / wire-link fields

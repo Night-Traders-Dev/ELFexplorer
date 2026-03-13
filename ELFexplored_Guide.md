@@ -557,6 +557,8 @@ Tabs:
 - `Examples`: common command patterns for smoke-test, tracing, storage, and GDB workflows
 
 Controls currently exposed:
+- scrollable settings pane for smaller terminals and laptops
+- Bramble executable override field so a custom binary path can be selected explicitly
 - target UF2/ELF path
 - clock override
 - GDB port
