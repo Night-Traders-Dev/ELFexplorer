@@ -388,6 +388,53 @@ class ToolingTests(unittest.TestCase):
         self.assertTrue(result["portable"])
         source_install.assert_called_once()
 
+    def test_build_bramble_command_args_supports_debug_storage_and_io(self):
+        args = tooling.build_bramble_command_args(
+            "/tmp/fw.uf2",
+            debug=True,
+            debug1=True,
+            status=True,
+            stdin_enabled=True,
+            gdb=True,
+            gdb_port=4444,
+            clock_mhz=125,
+            flash_path="/tmp/flash.bin",
+            mount_path="/tmp/mount",
+            sdcard_path="/tmp/sd.img",
+            sdcard_size_mb=32,
+            emmc_path="/tmp/emmc.img",
+            emmc_size_mb=64,
+            uart0_port=9999,
+            uart0_connect="127.0.0.1:9000",
+            wire_uart0="/tmp/uart.sock",
+            wire_gpio="/tmp/gpio.sock",
+            debug_mem=True,
+            no_boot2=True,
+            jit=True,
+        )
+
+        self.assertEqual(args[0], "/tmp/fw.uf2")
+        self.assertIn("-debug", args)
+        self.assertIn("-debug1", args)
+        self.assertIn("-status", args)
+        self.assertIn("-stdin", args)
+        self.assertIn("-gdb", args)
+        self.assertIn("4444", args)
+        self.assertEqual(args[args.index("-flash") + 1], "/tmp/flash.bin")
+        self.assertEqual(args[args.index("-sdcard-size") + 1], "32")
+        self.assertEqual(args[args.index("-emmc-size") + 1], "64")
+        self.assertEqual(args[args.index("-net-uart0") + 1], "9999")
+        self.assertEqual(args[args.index("-wire-gpio") + 1], "/tmp/gpio.sock")
+        self.assertIn("-jit", args)
+
+    def test_render_bramble_feature_lines_contains_expected_sections(self):
+        lines = tooling.render_bramble_feature_lines()
+        text = "\n".join(lines)
+        self.assertIn("Firmware Inputs:", text)
+        self.assertIn("Debugging:", text)
+        self.assertIn("Persistence and Storage:", text)
+        self.assertIn("I/O and Wiring:", text)
+
     def test_run_external_tool_command_dry_run_substitutes_target_path(self):
         environment = {
             "os": "linux",

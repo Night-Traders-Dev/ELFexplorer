@@ -112,6 +112,7 @@ def run_textual_workspace(callbacks):
             ("ctrl+l", "clear_log", "Clear Log"),
             ("ctrl+e", "open_editor_ui", "Editor UI"),
             ("ctrl+t", "open_default_tool_workbench", "Tool UI"),
+            ("ctrl+b", "open_bramble_workbench", "Bramble"),
         ]
 
         def __init__(self):
@@ -140,9 +141,9 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
-                    "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>\n"
+                    "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | bramble-ui [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
-                    "edit-ui (or Ctrl+E) opens split-pane editor workbench | Ctrl+T opens tool workbench\n"
+                    "edit-ui (or Ctrl+E) opens split-pane editor workbench | Ctrl+T opens tool workbench | Ctrl+B opens Bramble\n"
                     "edit-open <path> | edit-status | edit-show-elf | edit-show-uf2 | edit-list-phdr | edit-list-shdr | edit-list-blocks | edit-show-block <idx> | edit-hex [offset] [length] [width]\n"
                     "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
                     "edit-disasm [section] [max_lines] | edit-disasm-range <start> <stop> [section] [max_lines]\n"
@@ -158,6 +159,11 @@ def run_textual_workspace(callbacks):
             from textual.app import SystemCommand
 
             yield from super().get_system_commands(screen)
+            yield SystemCommand(
+                "Bramble: Open Dedicated Workbench",
+                "Open the dedicated Bramble emulator workspace",
+                self.action_open_bramble_workbench,
+            )
             yield SystemCommand(
                 "Tooling: Check External Tools",
                 "Detect host package manager and installed reverse-engineering tools",
@@ -348,6 +354,16 @@ def run_textual_workspace(callbacks):
         def action_open_default_tool_workbench(self):
             self.action_open_tool_workbench("radare2")
 
+        def action_open_bramble_workbench(self, target_path=None):
+            from ui.textual_bramble import BrambleScreenFactory
+
+            self.push_screen(
+                BrambleScreenFactory.build(
+                    target_path=target_path or self._default_tool_target(),
+                    report=self.last_report if isinstance(self.last_report, dict) else None,
+                )
+            )
+
         def action_tool_status(self):
             def runner(emit):
                 emit({"kind": "log", "message": "Refreshing external-tool status", "progress": 15.0})
@@ -481,12 +497,12 @@ def run_textual_workspace(callbacks):
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
                     self._log(
-                        "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | "
+                        "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | bramble-ui [path] | "
                         "tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>"
                     )
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <path> | edit-close | edit-status")
-                    self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
+                    self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench | bramble-ui [path] | Ctrl+B")
                     self._log("edit-show-elf | edit-set-elf <field> <value>")
                     self._log("edit-show-uf2 | edit-list-blocks | edit-show-block <idx> | edit-export-payload [path]")
                     self._log("edit-list-phdr | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>")
@@ -648,6 +664,11 @@ def run_textual_workspace(callbacks):
                     tool_key = args[0] if args else "radare2"
                     target_path = args[1] if len(args) >= 2 else None
                     self.action_open_tool_workbench(tool_key, target_path=target_path)
+                    return
+
+                if command == "bramble-ui":
+                    target_path = args[0] if args else None
+                    self.action_open_bramble_workbench(target_path=target_path)
                     return
 
                 if command == "tool-info":

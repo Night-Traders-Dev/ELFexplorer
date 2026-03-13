@@ -364,11 +364,13 @@ Startup/report UX behavior:
   - verbose log of downloads, extraction, wrapper creation, and package-manager output
   - threaded execution so the Textual application remains responsive
 - report mode also exposes per-tool workbench commands so the current binary can be sent directly into the integrated Tool Workbench
+- report mode includes a dedicated `Bramble` tab with install status, firmware suitability hints, and emulator capability summary
 
 Additional quick bindings in report view:
 - `e` for opening the split-pane editor workbench
 - `r` for rescan current mode
 - `t` for opening the default tool workbench
+- `b` for opening the dedicated Bramble workspace
 - `1` / `2` / `3` for mode switch + rescan
 
 ### 10.6 Settings Persistence
@@ -522,6 +524,7 @@ Workspace UX behavior:
 - `tool-status` uses the same background task system instead of blocking the command loop
 - `tool-download` and `tool-install` use a popup task window with live logs and a determinate progress bar
 - `tool-ui` opens the integrated Tool Workbench, and `Ctrl+T` opens the default workbench quickly
+- `bramble-ui [path]` opens the dedicated Bramble workspace, and `Ctrl+B` opens it for the current report/editor target
 
 ### 11.1a Tool Workbench
 
@@ -543,6 +546,25 @@ Built-in presets currently focus on stable command-line tools:
 - `rizin`: file info, sections, symbols, functions, strings
 - `cutter`: version
 - `imhex`: version
+
+### 11.1b Bramble Workspace
+
+The Bramble workspace is a dedicated Textual screen for RP2040 firmware emulation flows.
+
+Tabs:
+- `Session`: structured Bramble controls, command preview, run/debug buttons, progress, live console
+- `Reference`: Bramble capability summary surfaced from upstream emulator behavior
+- `Examples`: common command patterns for smoke-test, tracing, storage, and GDB workflows
+
+Controls currently exposed:
+- target UF2/ELF path
+- clock override
+- GDB port
+- flash image and mount directory
+- SD/eMMC image paths and sizes
+- UART bridge port / connect target
+- wire socket paths for UART0 / GPIO
+- toggles for `stdin`, core 1 debug, memory debug, `no-boot2`, and `jit`
 
 ### 11.2 Split-Pane Editor Workbench
 

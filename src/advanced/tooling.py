@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11.6 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.11.7 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {
@@ -376,6 +376,124 @@ TOOL_WORKBENCH_PROFILES = {
         ],
     },
 }
+
+BRAMBLE_FEATURES = {
+    "Firmware Inputs": [
+        "Runs RP2040 UF2 firmware images.",
+        "Runs RP2040 ELF firmware images.",
+        "Supports adjustable RP2040 clock configuration.",
+        "Supports optional boot2 bypass for firmware experiments.",
+    ],
+    "Debugging": [
+        "Core 0 debug trace output via -debug.",
+        "Core 1 debug trace output via -debug1.",
+        "Instruction trace output via -asm.",
+        "Periodic machine status output via -status.",
+        "GDB remote server via -gdb [port].",
+        "Unmapped-memory diagnostics via -debug-mem.",
+    ],
+    "Persistence and Storage": [
+        "Persistent flash backing via -flash <path>.",
+        "Flash filesystem mounting via -mount <dir> when flash backing is enabled.",
+        "SPI SD card images via -sdcard <path> with configurable size/spi bus.",
+        "eMMC images via -emmc <path> with configurable size/spi bus.",
+    ],
+    "I/O and Wiring": [
+        "stdin to UART0 bridging via -stdin.",
+        "Network UART bridges via -net-uart0/-net-uart1 and connect modes.",
+        "Unix socket wire links via -wire-uart0/-wire-uart1/-wire-gpio.",
+    ],
+    "Acceleration": [
+        "Optional JIT mode via -jit.",
+        "Useful as an in-app RP2040 firmware smoke-test harness before hardware deployment.",
+    ],
+}
+
+
+def render_bramble_feature_lines():
+    lines = []
+    for section, items in BRAMBLE_FEATURES.items():
+        lines.append(f"{section}:")
+        for item in items:
+            lines.append(f"- {item}")
+        lines.append("")
+    return lines[:-1]
+
+
+def _append_bramble_arg_pair(args, flag, value):
+    if value is None:
+        return
+    text = str(value).strip()
+    if not text:
+        return
+    args.extend([flag, text])
+
+
+def build_bramble_command_args(
+    target_path,
+    *,
+    debug=False,
+    debug1=False,
+    asm_trace=False,
+    status=False,
+    stdin_enabled=False,
+    gdb=False,
+    gdb_port=None,
+    clock_mhz=None,
+    no_boot2=False,
+    debug_mem=False,
+    flash_path=None,
+    mount_path=None,
+    sdcard_path=None,
+    sdcard_spi=None,
+    sdcard_size_mb=None,
+    emmc_path=None,
+    emmc_spi=None,
+    emmc_size_mb=None,
+    uart0_port=None,
+    uart0_connect=None,
+    wire_uart0=None,
+    wire_gpio=None,
+    jit=False,
+):
+    if not target_path:
+        raise ValueError("Bramble requires a target UF2 or ELF path.")
+
+    args = [str(Path(target_path).expanduser())]
+    if debug:
+        args.append("-debug")
+    if debug1:
+        args.append("-debug1")
+    if asm_trace:
+        args.append("-asm")
+    if status:
+        args.append("-status")
+    if stdin_enabled:
+        args.append("-stdin")
+    if gdb:
+        args.append("-gdb")
+        if gdb_port not in (None, "", 3333, "3333"):
+            args.append(str(gdb_port).strip())
+    _append_bramble_arg_pair(args, "-clock", clock_mhz)
+    if no_boot2:
+        args.append("-no-boot2")
+    if debug_mem:
+        args.append("-debug-mem")
+    _append_bramble_arg_pair(args, "-flash", flash_path)
+    _append_bramble_arg_pair(args, "-mount", mount_path)
+    _append_bramble_arg_pair(args, "-sdcard", sdcard_path)
+    _append_bramble_arg_pair(args, "-sdcard-spi", sdcard_spi)
+    _append_bramble_arg_pair(args, "-sdcard-size", sdcard_size_mb)
+    _append_bramble_arg_pair(args, "-emmc", emmc_path)
+    _append_bramble_arg_pair(args, "-emmc-spi", emmc_spi)
+    _append_bramble_arg_pair(args, "-emmc-size", emmc_size_mb)
+    _append_bramble_arg_pair(args, "-net-uart0", uart0_port)
+    _append_bramble_arg_pair(args, "-net-uart0-connect", uart0_connect)
+    _append_bramble_arg_pair(args, "-wire-uart0", wire_uart0)
+    _append_bramble_arg_pair(args, "-wire-gpio", wire_gpio)
+    if jit:
+        args.append("-jit")
+    return args
 
 
 def list_external_tools():

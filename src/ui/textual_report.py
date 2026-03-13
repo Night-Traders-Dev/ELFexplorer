@@ -8,10 +8,12 @@ from advanced.toolbridge import (
     list_tool_plugin_formats,
 )
 from advanced.tooling import (
+    build_bramble_command_args,
     collect_external_tool_status,
     download_external_tool,
     install_external_tool,
     list_external_tools,
+    render_bramble_feature_lines,
     render_external_tool_detail_lines,
     render_external_tool_status_lines,
 )
@@ -139,6 +141,13 @@ def run_textual_report(report: Dict):
             height: auto;
             padding: 1 2;
         }
+        #bramble_scroll {
+            height: 1fr;
+            border: round $secondary;
+        }
+        #bramble_summary {
+            padding: 1 2;
+        }
         """
 
         BINDINGS = [
@@ -146,6 +155,7 @@ def run_textual_report(report: Dict):
             ("r", "rescan_current_mode", "Rescan"),
             ("e", "open_editor_workbench", "Editor"),
             ("t", "open_default_tool_workbench", "Tool UI"),
+            ("b", "open_bramble_workbench", "Bramble"),
             ("1", "set_mode_general", "Mode: General"),
             ("2", "set_mode_important", "Mode: Important"),
             ("3", "set_mode_detailed", "Mode: Detailed"),
@@ -189,6 +199,9 @@ def run_textual_report(report: Dict):
                         yield DataTable(id="integrations_table")
                         with VerticalScroll(id="tooling_status_scroll"):
                             yield Static("", id="tooling_status")
+                    with TabPane("Bramble"):
+                        with VerticalScroll(id="bramble_scroll"):
+                            yield Static("", id="bramble_summary")
             yield Footer()
 
         def get_system_commands(self, screen: Screen):
@@ -260,6 +273,11 @@ def run_textual_report(report: Dict):
                 self.action_export_tool_imhex,
             )
             yield SystemCommand(
+                "Bramble: Open Dedicated Workbench",
+                "Open the dedicated Bramble firmware-emulation workspace for the current file",
+                self.action_open_bramble_workbench,
+            )
+            yield SystemCommand(
                 "Report: Rescan Current Mode",
                 "Rescan the current file with the same metadata mode",
                 self.action_rescan_current_mode,
@@ -324,6 +342,56 @@ def run_textual_report(report: Dict):
                     )
                     lines.append("")
             tooling_status.update("\n".join(lines).rstrip())
+
+        def _fill_bramble_tab(self):
+            widget = self.query_one("#bramble_summary", Static)
+            snapshot = self.tooling_snapshot or collect_external_tool_status()
+            bramble_status = next(
+                (item for item in snapshot.get("tools", []) if item.get("key") == "bramble"),
+                None,
+            )
+            artifact = self.report["scan_result"].get("artifact_profile", {})
+            target = self.report.get("file") or "none"
+            lines = [
+                "Bramble RP2040 Emulator",
+                "",
+                f"Target file: {target}",
+                f"Artifact target hint: {artifact.get('target', 'Unknown')}",
+                f"SDK/runtime hint: {artifact.get('sdk', 'Unknown')} / {artifact.get('runtime', 'Unknown')}",
+                f"Firmware candidate: {self.report['scan_result'].get('firmware_fingerprint', {}).get('is_firmware_candidate', False)}",
+                "",
+            ]
+            if bramble_status:
+                lines.extend(
+                    [
+                        f"Installed: {'yes' if bramble_status.get('installed') else 'no'}",
+                        f"Executable: {bramble_status.get('path') or 'not found'}",
+                        f"One-click local install: {'yes' if bramble_status.get('portable_install_supported') else 'no'}",
+                        f"Download page: {bramble_status.get('download_url') or 'n/a'}",
+                        "",
+                    ]
+                )
+            try:
+                example = " ".join(build_bramble_command_args(target, status=True))
+            except Exception:
+                example = "Set a valid UF2/ELF report target to generate a command preview."
+            lines.extend(
+                [
+                    "Quick command preview:",
+                    f"bramble {example}" if example and not example.startswith("Set ") else example,
+                    "",
+                    "Capabilities surfaced by ELFexplorer:",
+                ]
+            )
+            lines.extend(render_bramble_feature_lines())
+            lines.extend(
+                [
+                    "",
+                    "Next action:",
+                    "- Press `b` or use the palette entry `Bramble: Open Dedicated Workbench`.",
+                ]
+            )
+            widget.update("\n".join(lines))
 
         def _launch_modal_task(
             self,
@@ -396,6 +464,7 @@ def run_textual_report(report: Dict):
             self._fill_table("compiler_scores", "Compiler", scan["compiler_scores"])
             self._fill_table("build_scores", "Build System", scan["build_scores"])
             self._fill_integrations_table()
+            self._fill_bramble_tab()
 
             evidence_lines = []
             for line in indicators:
@@ -726,6 +795,16 @@ def run_textual_report(report: Dict):
 
         def action_open_default_tool_workbench(self):
             self.action_open_tool_workbench("radare2")
+
+        def action_open_bramble_workbench(self):
+            from ui.textual_bramble import BrambleScreenFactory
+
+            self.push_screen(
+                BrambleScreenFactory.build(
+                    target_path=self.report.get("file"),
+                    report=self.report,
+                )
+            )
 
         def on_mount(self) -> None:
             self._apply_saved_theme()

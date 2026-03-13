@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.6-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.7-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,15 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.7
+
+- Added a dedicated Bramble screen with Bramble-specific tabs, command synthesis, preview, progress, and live console output.
+- Added a dedicated `Bramble` tab to the report UI with install status, firmware suitability hints, and emulator capability summary.
+- Added direct Bramble entry points in Textual:
+  - report binding `b`
+  - workspace binding `Ctrl+B`
+  - workspace command `bramble-ui [path]`
 
 ## What Changed in 0.11.6
 
@@ -461,6 +470,7 @@ Tooling UX details:
 - `tool-install <tool>` opens a popup with a progress bar and live install log
 - the workspace startup splash preloads host-tool status so the first tooling view does not block
 - `tool-ui [tool] [path]` opens the integrated Tool Workbench for launching tools, running commands, and reviewing output
+- `bramble-ui [path]` opens the dedicated Bramble firmware-emulation workspace
 
 ### Tool Workbench
 
@@ -481,6 +491,18 @@ Current built-in command presets focus on tools that have stable CLI output:
 - `imhex`: version
 
 GUI-centric tools still integrate through the same screen, but they are launched externally rather than embedded as native panes inside the terminal UI.
+
+### Bramble Workspace
+
+ELFexplorer also includes a dedicated Bramble screen for RP2040 firmware workflows.
+
+It provides:
+- a Bramble-specific session tab with structured controls instead of raw flags
+- command preview generated from form fields
+- emulator run modes for firmware run, debug, ASM trace, status, and GDB server
+- flash / mount / SD / eMMC / UART / wire-link fields
+- live console capture and progress updates
+- reference and example tabs focused on Bramble capabilities
 
 Example editor session:
 
@@ -541,6 +563,7 @@ Custom report commands include:
 - `Tooling: Install Cutter`
 - `Tooling: Install Rizin`
 - `Tooling: Install ImHex`
+- `Bramble: Open Dedicated Workbench`
 - `Report: Export Markdown`
 - `Report: Export PDF`
 - `Integrations: Export Binary Ninja Script`
@@ -550,6 +573,7 @@ Custom report commands include:
 - `Integrations: Export Cutter/Rizin Script`
 - `Integrations: Export ImHex Memory Map`
 - `Report: Open Editor Workbench`
+- `Bramble: Open Dedicated Workbench`
 - `Report: Rescan Current Mode`
 - `Report: Mode General + Rescan`
 - `Report: Mode Important + Rescan`
@@ -558,6 +582,7 @@ Custom report commands include:
 Quick keys in report view:
 - `e`: open split-pane editor workbench for current binary
 - `r`: rescan current mode
+- `b`: open the dedicated Bramble workspace for the current binary
 - `1`: switch to `general` and rescan
 - `2`: switch to `important` and rescan
 - `3`: switch to `detailed` and rescan
