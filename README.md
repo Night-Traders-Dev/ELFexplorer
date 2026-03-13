@@ -267,6 +267,7 @@ python3 install_deps.py --print-groups
 python3 install_deps.py --print-tools
 python3 install_deps.py --check-tools
 python3 install_deps.py --tool-info ghidra
+python3 install_deps.py --download-tool ghidra --dry-run
 python3 install_deps.py --install-tool radare2 --dry-run
 ```
 
@@ -364,7 +365,7 @@ The workspace supports:
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - tool integrations (`tool-list`, `tool-export <format> [path]`)
-- host tooling checks/install (`tool-status`, `tool-info <tool>`, `tool-install <tool>`)
+- host tooling checks/install (`tool-status`, `tool-info <tool>`, `tool-download <tool>`, `tool-install <tool>`)
 - summary display (`show`)
 - advanced ELF editing:
   - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
@@ -464,6 +465,13 @@ Custom report commands include:
 - `Tooling: Show Install Methods for Cutter`
 - `Tooling: Show Install Methods for Rizin`
 - `Tooling: Show Install Methods for ImHex`
+- `Tooling: Download Binary Ninja`
+- `Tooling: Download Ghidra`
+- `Tooling: Download IDA Pro`
+- `Tooling: Download radare2`
+- `Tooling: Download Cutter`
+- `Tooling: Download Rizin`
+- `Tooling: Download ImHex`
 - `Tooling: Install Binary Ninja`
 - `Tooling: Install Ghidra`
 - `Tooling: Install IDA Pro`
@@ -583,6 +591,7 @@ Host tooling detection and install support:
 python3 install_deps.py --print-tools
 python3 install_deps.py --check-tools
 python3 install_deps.py --tool-info radare2
+python3 install_deps.py --download-tool ghidra --dry-run
 python3 install_deps.py --install-tool radare2 --dry-run
 python3 install_deps.py --install-tool ghidra
 ```
@@ -593,6 +602,8 @@ Current behavior:
 - prints official homepage/download locations for supported tools
 - prints host-aware install commands when the current OS/package manager is supported
 - prints all known package-manager install methods for each supported tool
+- downloads official release assets or vendor packages when a supported download path exists
+- performs one-click user-local installs under `~/.elfexplorer/tools` when a portable package is available
 - uses verified package-manager recipes where available
 - falls back to manual-install guidance for tools such as vendor-managed commercial distributions
 
@@ -603,6 +614,16 @@ Current automatic-install coverage is intentionally conservative:
 - `cutter`: `dnf`, `pacman`
 - `rizin`: `dnf`, `pacman`
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
+
+Current one-click local-install coverage on Linux:
+- `ghidra`: official release ZIP -> extracted under `~/.elfexplorer/tools/ghidra/...`
+- `binaryninja`: Binary Ninja Free Linux ZIP -> extracted under `~/.elfexplorer/tools/binaryninja/...`
+- `cutter`: upstream AppImage -> installed under `~/.elfexplorer/tools/cutter/...`
+- `imhex`: upstream AppImage -> installed under `~/.elfexplorer/tools/imhex/...`
+- `rizin`: upstream static tarball -> extracted under `~/.elfexplorer/tools/rizin/...`
+
+Launch wrappers for local installs are created in:
+- `~/.elfexplorer/bin`
 
 Official download/home pages used by the tooling layer:
 - `binaryninja`: `https://binary.ninja/free/`

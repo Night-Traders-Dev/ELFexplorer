@@ -137,6 +137,65 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(detail["install_methods"][0]["manager"], "brew")
         self.assertIn("apt-get", " ".join(detail["host_install_command"]))
 
+    def test_download_external_tool_dry_run_returns_url_and_path(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        spec = {
+            "filename": "ghidra.zip",
+            "url": "https://example.invalid/ghidra.zip",
+            "install_mode": "zip-extract",
+        }
+        with mock.patch("advanced.tooling._resolve_download_spec", return_value=spec), mock.patch(
+            "advanced.tooling.shutil.which",
+            return_value=None,
+        ):
+            result = tooling.download_external_tool("ghidra", dry_run=True, environment=environment)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["download_url"], "https://example.invalid/ghidra.zip")
+        self.assertIn("ghidra.zip", result["download_path"])
+
+    def test_install_external_tool_prefers_portable_on_rootless_when_supported(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": ["pacman"],
+            "primary_package_manager": "pacman",
+            "primary_package_manager_label": "pacman",
+        }
+        portable_result = {
+            "ok": True,
+            "changed": False,
+            "message": "Dry run portable install",
+            "status": {"label": "Ghidra"},
+            "portable": True,
+        }
+
+        def fake_which(name):
+            if name == "sudo":
+                return "/usr/bin/sudo"
+            return None
+
+        with mock.patch("advanced.tooling.shutil.which", side_effect=fake_which), mock.patch(
+            "advanced.tooling.os.geteuid",
+            return_value=1000,
+        ), mock.patch(
+            "advanced.tooling._install_portable_tool",
+            return_value=portable_result,
+        ) as portable_install:
+            result = tooling.install_external_tool("ghidra", dry_run=True, environment=environment)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["portable"])
+        portable_install.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

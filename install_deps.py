@@ -21,6 +21,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from advanced.tooling import (
     collect_external_tool_status,
+    download_external_tool,
     install_external_tool,
     describe_external_tool,
     list_external_tools,
@@ -122,6 +123,13 @@ def parse_args(argv=None):
         help="Install one or more external tools if supported on this host.",
     )
     parser.add_argument(
+        "--download-tool",
+        action="append",
+        choices=tuple(sorted(list_external_tools())),
+        default=[],
+        help="Download one or more external tool packages.",
+    )
+    parser.add_argument(
         "--tool-info",
         action="append",
         choices=tuple(sorted(list_external_tools())),
@@ -163,7 +171,7 @@ def main(argv=None):
                 print(f"  - {item['label']}: missing, install with {item['install_command']}")
             else:
                 print(f"  - {item['label']}: missing, manual install required")
-        if not args.install_tool:
+        if not args.install_tool and not args.download_tool:
             if not args.tool_info:
                 return 0
 
@@ -194,10 +202,21 @@ def main(argv=None):
             if detail.get("manual_install"):
                 print("Manual:", detail["manual_install"])
             print()
-        if not args.install_tool:
+        if not args.install_tool and not args.download_tool:
             return 0
 
     install_failures = 0
+    for tool_key in args.download_tool:
+        result = download_external_tool(tool_key, dry_run=args.dry_run)
+        print(f"Tool: {result['status']['label']}")
+        print(f"Result: {result['message']}")
+        if result.get("download_url"):
+            print("Download URL:", result["download_url"])
+        if result.get("download_path"):
+            print("Download Path:", result["download_path"])
+        if not result["ok"]:
+            install_failures += 1
+
     for tool_key in args.install_tool:
         result = install_external_tool(tool_key, dry_run=args.dry_run)
         print(f"Tool: {result['status']['label']}")
@@ -211,7 +230,7 @@ def main(argv=None):
         if not result["ok"]:
             install_failures += 1
 
-    if args.install_tool:
+    if args.install_tool or args.download_tool:
         return 1 if install_failures else 0
 
     selected_groups = list(PROFILE_GROUPS[args.profile])

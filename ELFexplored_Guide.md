@@ -326,6 +326,7 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - print known host-managed external tools: `python3 install_deps.py --print-tools`
 - inspect host OS/package manager + tool status: `python3 install_deps.py --check-tools`
 - print download/install methods for a specific tool: `python3 install_deps.py --tool-info <tool>`
+- download a tool package without installing it: `python3 install_deps.py --download-tool <tool>`
 - install external tool when supported: `python3 install_deps.py --install-tool <tool>`
 
 External-tool export notes:
@@ -339,6 +340,7 @@ External-tool export notes:
 When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
 - external tool status refresh command
 - per-tool install-method commands (homepage, download URL, host install route)
+- per-tool download commands
 - install commands for known external tools (auto-install where supported, manual guidance otherwise)
 - Markdown export command
 - PDF export command
@@ -396,6 +398,8 @@ Current behavior:
 - expose official homepage/download URLs for supported tools
 - expose host-aware install commands when the current environment supports package-managed install
 - expose all known package-manager install methods for each tool
+- download official release assets or vendor packages when a supported source is known
+- perform one-click user-local installs for tools with portable packages on supported hosts
 - synthesize install commands only when a verified package recipe exists
 - fall back to manual vendor/install guidance for tools that are not safely package-managed on the current host
 
@@ -406,6 +410,18 @@ Current automatic-install coverage is conservative by design:
 - `cutter`: `dnf`, `pacman`
 - `rizin`: `dnf`, `pacman`
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
+
+Current one-click local-install coverage on Linux:
+- `ghidra`: official release ZIP
+- `binaryninja`: Binary Ninja Free Linux ZIP
+- `cutter`: upstream AppImage
+- `imhex`: upstream AppImage
+- `rizin`: upstream static tarball
+
+Local-install layout:
+- packages download into `~/.elfexplorer/downloads/<tool>/`
+- extracted/installed tools live under `~/.elfexplorer/tools/<tool>/`
+- launcher wrappers are written to `~/.elfexplorer/bin/`
 
 Commercial/vendor-distributed tools such as `IDA Pro` are still status-checked, but installation remains manual.
 
@@ -434,6 +450,7 @@ Workspace commands:
 - `export-collection-pdf <path>`
 - `tool-status`
 - `tool-info <tool>`
+- `tool-download <tool>`
 - `tool-install <tool>`
 - `tool-list`
 - `tool-export <format> [path]`

@@ -9,6 +9,7 @@ from advanced.toolbridge import (
 )
 from advanced.tooling import (
     collect_external_tool_status,
+    download_external_tool,
     install_external_tool,
     list_external_tools,
     render_external_tool_detail_lines,
@@ -124,10 +125,18 @@ def run_textual_report(report: Dict):
             padding: 1 2;
             border: round $primary;
         }
+        #integrations_table {
+            height: 12;
+            margin-top: 1;
+        }
+        #tooling_status_scroll {
+            height: 1fr;
+            border: round $secondary;
+            margin-top: 1;
+        }
         #tooling_status {
             height: auto;
             padding: 1 2;
-            border: round $secondary;
         }
         """
 
@@ -175,7 +184,8 @@ def run_textual_report(report: Dict):
                     with TabPane("Integrations"):
                         yield Static("", id="integrations_note")
                         yield DataTable(id="integrations_table")
-                        yield Static("", id="tooling_status")
+                        with VerticalScroll(id="tooling_status_scroll"):
+                            yield Static("", id="tooling_status")
             yield Footer()
 
         def get_system_commands(self, screen: Screen):
@@ -200,6 +210,11 @@ def run_textual_report(report: Dict):
                     f"Tooling: Show Install Methods for {meta['label']}",
                     f"Show download and install methods for {meta['label']}",
                     lambda tool_key=tool_key: self.action_show_external_tool_info(tool_key),
+                )
+                yield SystemCommand(
+                    f"Tooling: Download {meta['label']}",
+                    f"Download the current package for {meta['label']}",
+                    lambda tool_key=tool_key: self.action_download_external_tool(tool_key),
                 )
                 yield SystemCommand(
                     f"Tooling: Install {meta['label']}",
@@ -513,6 +528,18 @@ def run_textual_report(report: Dict):
                 else:
                     self.notify(result["message"], title="Tooling", severity="warning")
 
+        def _download_external_tool(self, tool_key: str):
+            result = download_external_tool(tool_key)
+            self._refresh_view()
+            detail = result["message"]
+            if result.get("download_path"):
+                detail = f"{detail} Path: {result['download_path']}"
+            self.notify(
+                detail,
+                title="Tooling",
+                severity="information" if result.get("ok") else "warning",
+            )
+
         def action_check_external_tools(self):
             self._refresh_view()
             self.notify("External tool status refreshed.", title="Tooling", severity="information")
@@ -528,6 +555,9 @@ def run_textual_report(report: Dict):
                 title="Tooling",
                 severity="information",
             )
+
+        def action_download_external_tool(self, tool_key: str):
+            self._download_external_tool(tool_key)
 
         def action_export_markdown(self):
             self._export_markdown()

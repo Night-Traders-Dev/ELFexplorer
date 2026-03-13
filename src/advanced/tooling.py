@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
 import platform
+import re
 import shutil
 import subprocess
+import tarfile
+import urllib.parse
+import urllib.request
+import zipfile
 from pathlib import Path
 
 
@@ -76,6 +82,12 @@ PACKAGE_MANAGER_PRIORITY = {
     "macos": ("brew",),
     "windows": ("winget", "choco", "scoop"),
 }
+
+ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
+LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
+LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
+LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
+HTTP_USER_AGENT = "ELFexplorer/0.11 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "binaryninja": {
@@ -215,6 +227,20 @@ def _normalize_os(system_name: str | None = None):
     return value or "unknown"
 
 
+def _normalize_arch(machine_name: str | None = None):
+    value = (machine_name or platform.machine() or "").strip().lower()
+    mapping = {
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86": "x86",
+        "i386": "x86",
+        "i686": "x86",
+    }
+    return mapping.get(value, value or "unknown")
+
+
 def _detect_linux_distro():
     try:
         release = platform.freedesktop_os_release()
@@ -236,6 +262,7 @@ def detect_host_environment():
     environment = {
         "os": os_key,
         "os_label": {"linux": "Linux", "macos": "macOS", "windows": "Windows"}.get(os_key, os_key),
+        "arch": _normalize_arch(),
         "package_managers": available,
         "primary_package_manager": available[0] if available else None,
         "primary_package_manager_label": (
@@ -251,9 +278,18 @@ def _iter_hint_paths(path_hints):
     for hint in path_hints:
         expanded = Path(hint).expanduser()
         if any(token in hint for token in ("*", "?", "[")):
-            yield from expanded.parent.glob(expanded.name)
+            parent = expanded.parent
+            if parent.exists():
+                yield from parent.glob(expanded.name)
             continue
         yield expanded
+
+
+def _local_wrapper_paths(tool_key):
+    wrappers = []
+    for executable in THIRD_PARTY_TOOLS[tool_key].get("executables", ()):
+        wrappers.append(LOCAL_BIN_ROOT / executable)
+    return wrappers
 
 
 def _probe_version(executable_path, version_args):
@@ -281,6 +317,9 @@ def _find_tool_path(tool_key):
         found = shutil.which(executable)
         if found:
             return {"path": found, "source": "PATH"}
+    for wrapper in _local_wrapper_paths(tool_key):
+        if wrapper.exists():
+            return {"path": str(wrapper), "source": "elfexplorer-local"}
     for path in _iter_hint_paths(meta.get("path_hints", ())):
         if path.exists():
             return {"path": str(path), "source": "hint"}
@@ -314,6 +353,395 @@ def build_install_command(tool_key, environment=None, interactive=False):
     return None, None
 
 
+def _portable_install_supported(tool_key, environment=None):
+    environment = environment or detect_host_environment()
+    os_key = environment.get("os")
+    arch = environment.get("arch")
+    if tool_key == "ghidra":
+        return os_key == "linux" and arch == "x86_64"
+    if tool_key == "binaryninja":
+        return os_key == "linux" and arch == "x86_64"
+    if tool_key == "cutter":
+        return os_key == "linux" and arch == "x86_64"
+    if tool_key == "imhex":
+        return os_key == "linux" and arch in {"x86_64", "arm64"}
+    if tool_key == "rizin":
+        return os_key == "linux" and arch == "x86_64"
+    return False
+
+
+def _download_supported(tool_key, environment=None):
+    environment = environment or detect_host_environment()
+    os_key = environment.get("os")
+    if tool_key == "binaryninja":
+        return os_key in {"linux", "macos", "windows"}
+    if tool_key == "ghidra":
+        return os_key in {"linux", "macos", "windows"}
+    if tool_key == "cutter":
+        return os_key in {"linux", "macos", "windows"}
+    if tool_key == "imhex":
+        return os_key in {"linux", "macos", "windows"}
+    if tool_key == "rizin":
+        return os_key in {"linux", "macos", "windows"}
+    return False
+
+
+def _http_request(url, accept=None):
+    headers = {"User-Agent": HTTP_USER_AGENT}
+    if accept:
+        headers["Accept"] = accept
+    return urllib.request.Request(url, headers=headers)
+
+
+def _load_json(url):
+    with urllib.request.urlopen(_http_request(url, accept="application/vnd.github+json"), timeout=20) as handle:
+        return json.load(handle)
+
+
+def _download_file(url, target_path):
+    target = Path(target_path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(_http_request(url), timeout=120) as response:
+        with target.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+    return target
+
+
+def _download_filename_from_url(url):
+    parsed = urllib.parse.urlparse(url)
+    filename = Path(parsed.path).name
+    return filename or "download.bin"
+
+
+def _github_latest_release(repo):
+    data = _load_json(f"https://api.github.com/repos/{repo}/releases/latest")
+    return {
+        "repo": repo,
+        "tag_name": data.get("tag_name"),
+        "assets": data.get("assets", []),
+    }
+
+
+def _choose_github_asset(repo, patterns):
+    release = _github_latest_release(repo)
+    compiled = [re.compile(pattern) for pattern in patterns]
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        for pattern in compiled:
+            if pattern.search(name):
+                return {
+                    "source": "github-release",
+                    "repo": repo,
+                    "tag_name": release.get("tag_name"),
+                    "filename": name,
+                    "url": asset.get("browser_download_url"),
+                }
+    return None
+
+
+def _resolve_binary_ninja_free_asset(environment):
+    os_key = environment.get("os")
+    suffix_map = {
+        "linux": "binaryninja_free_linux.zip",
+        "macos": "binaryninja_free_macosx.dmg",
+        "windows": "binaryninja_free_win64.exe",
+    }
+    suffix = suffix_map.get(os_key)
+    if not suffix:
+        return None
+    with urllib.request.urlopen(_http_request("https://binary.ninja/free/"), timeout=20) as handle:
+        html = handle.read().decode("utf-8", "replace")
+    marker = f"https://cdn.binary.ninja/installers/{suffix}"
+    index = html.find(marker)
+    if index < 0:
+        return None
+    return {
+        "source": "vendor-page",
+        "filename": suffix,
+        "url": marker,
+    }
+
+
+def _resolve_download_spec(tool_key, environment=None):
+    environment = environment or detect_host_environment()
+    os_key = environment.get("os")
+    arch = environment.get("arch")
+
+    if tool_key == "binaryninja":
+        asset = _resolve_binary_ninja_free_asset(environment)
+        if not asset:
+            return None
+        install_mode = "zip-extract" if os_key == "linux" else "download-only"
+        entry_globs = ["**/binaryninja"] if install_mode == "zip-extract" else []
+        return {
+            **asset,
+            "tool_key": tool_key,
+            "install_mode": install_mode,
+            "entry_globs": entry_globs,
+        }
+
+    if tool_key == "ghidra":
+        asset = _choose_github_asset(
+            "NationalSecurityAgency/ghidra",
+            [r"^ghidra_.*_PUBLIC_.*\.zip$"],
+        )
+        if not asset:
+            return None
+        install_mode = "zip-extract" if os_key == "linux" and arch == "x86_64" else "download-only"
+        return {
+            **asset,
+            "tool_key": tool_key,
+            "install_mode": install_mode,
+            "entry_globs": ["**/ghidraRun"],
+        }
+
+    if tool_key == "cutter":
+        pattern_map = {
+            ("linux", "x86_64"): [r"^Cutter-v.*-Linux-x86_64\.AppImage$", r"^Cutter-v.*-Linux-Qt5-x86_64\.AppImage$"],
+            ("windows", "x86_64"): [r"^Cutter-v.*-Windows-x86_64\.zip$"],
+            ("macos", "x86_64"): [r"^Cutter-v.*-macOS-x86_64\.dmg$"],
+            ("macos", "arm64"): [r"^Cutter-v.*-macOS-arm64\.dmg$"],
+        }
+        patterns = pattern_map.get((os_key, arch))
+        if not patterns:
+            return None
+        asset = _choose_github_asset("rizinorg/cutter", patterns)
+        if not asset:
+            return None
+        install_mode = "appimage" if os_key == "linux" else "download-only"
+        return {
+            **asset,
+            "tool_key": tool_key,
+            "install_mode": install_mode,
+            "entry_globs": [],
+        }
+
+    if tool_key == "imhex":
+        pattern_map = {
+            ("linux", "x86_64"): [r"^imhex-.*-x86_64\.AppImage$"],
+            ("linux", "arm64"): [r"^imhex-.*-arm64\.AppImage$"],
+            ("windows", "x86_64"): [r"^imhex-.*-Windows-Portable-x86_64\.zip$"],
+            ("windows", "arm64"): [r"^imhex-.*-Windows-Portable-arm64\.zip$"],
+            ("macos", "x86_64"): [r"^imhex-.*-macOS-x86_64\.dmg$", r"^imhex-.*-macOS-NoGPU-x86_64\.dmg$"],
+            ("macos", "arm64"): [r"^imhex-.*-macOS-arm64\.dmg$"],
+        }
+        patterns = pattern_map.get((os_key, arch))
+        if not patterns:
+            return None
+        asset = _choose_github_asset("WerWolv/ImHex", patterns)
+        if not asset:
+            return None
+        install_mode = "appimage" if os_key == "linux" else "download-only"
+        return {
+            **asset,
+            "tool_key": tool_key,
+            "install_mode": install_mode,
+            "entry_globs": [],
+        }
+
+    if tool_key == "rizin":
+        pattern_map = {
+            ("linux", "x86_64"): [r"^rizin-v.*-static-x86_64\.tar\.xz$"],
+            ("windows", "x86_64"): [r"^rizin-windows-static-v.*\.zip$"],
+            ("macos", "x86_64"): [r"^rizin-macos-v.*\.pkg$"],
+            ("macos", "arm64"): [r"^rizin-macos-v.*\.pkg$"],
+        }
+        patterns = pattern_map.get((os_key, arch))
+        if not patterns:
+            return None
+        asset = _choose_github_asset("rizinorg/rizin", patterns)
+        if not asset:
+            return None
+        install_mode = "tar-extract" if os_key == "linux" else "download-only"
+        return {
+            **asset,
+            "tool_key": tool_key,
+            "install_mode": install_mode,
+            "entry_globs": ["**/bin/rizin"],
+        }
+
+    return None
+
+
+def _write_wrapper(tool_key, executable_path):
+    executable = Path(executable_path).expanduser().resolve()
+    LOCAL_BIN_ROOT.mkdir(parents=True, exist_ok=True)
+    wrappers = []
+    for name in THIRD_PARTY_TOOLS[tool_key].get("executables", ()):
+        wrapper = LOCAL_BIN_ROOT / name
+        wrapper.write_text(f"#!/bin/sh\nexec \"{executable}\" \"$@\"\n", encoding="utf-8")
+        wrapper.chmod(0o755)
+        wrappers.append(wrapper)
+    return wrappers
+
+
+def _find_first_match(root, patterns):
+    root = Path(root)
+    for pattern in patterns:
+        matches = sorted(root.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
+def _tool_install_root(tool_key, spec):
+    tag = spec.get("tag_name") or Path(spec["filename"]).stem
+    safe_tag = re.sub(r"[^A-Za-z0-9._-]+", "_", str(tag))
+    return LOCAL_TOOLS_ROOT / tool_key / safe_tag
+
+
+def _portable_requires_download_only(spec):
+    return spec.get("install_mode") == "download-only"
+
+
+def download_external_tool(tool_key, dry_run=False, environment=None, output_dir=None):
+    if tool_key not in THIRD_PARTY_TOOLS:
+        raise ValueError(f"Unsupported external tool '{tool_key}'.")
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(tool_key, environment=environment)
+    spec = _resolve_download_spec(tool_key, environment=environment)
+    if not spec:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": status.get("manual_install") or "No downloadable package is defined for this tool on this host.",
+            "status": status,
+            "manual_only": True,
+        }
+
+    destination_dir = Path(output_dir).expanduser() if output_dir else (LOCAL_DOWNLOADS_ROOT / tool_key)
+    archive_path = destination_dir / spec["filename"]
+    if dry_run:
+        return {
+            "ok": True,
+            "changed": False,
+            "message": f"Dry run: download {spec['url']} -> {archive_path}",
+            "status": status,
+            "download_url": spec["url"],
+            "download_path": str(archive_path),
+            "portable": not _portable_requires_download_only(spec),
+        }
+
+    downloaded = _download_file(spec["url"], archive_path)
+    return {
+        "ok": True,
+        "changed": True,
+        "message": f"Downloaded {status['label']} package to {downloaded}",
+        "status": status,
+        "download_url": spec["url"],
+        "download_path": str(downloaded),
+        "portable": not _portable_requires_download_only(spec),
+    }
+
+
+def _install_portable_tool(tool_key, environment=None, dry_run=False):
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(tool_key, environment=environment)
+    spec = _resolve_download_spec(tool_key, environment=environment)
+    if not spec:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": status.get("manual_install") or "Portable install is not available on this host.",
+            "status": status,
+            "manual_only": True,
+        }
+
+    install_root = _tool_install_root(tool_key, spec)
+    archive_path = (LOCAL_DOWNLOADS_ROOT / tool_key / spec["filename"]).expanduser()
+    if _portable_requires_download_only(spec):
+        if dry_run:
+            return {
+                "ok": True,
+                "changed": False,
+                "message": f"Dry run: download-only package {spec['url']} -> {archive_path}",
+                "status": status,
+                "download_url": spec["url"],
+                "download_path": str(archive_path),
+                "manual_only": True,
+            }
+        downloaded = _download_file(spec["url"], archive_path)
+        return {
+            "ok": False,
+            "changed": True,
+            "message": (
+                f"Downloaded {status['label']} installer package to {downloaded}. "
+                "Manual completion is still required on this platform."
+            ),
+            "status": status,
+            "download_url": spec["url"],
+            "download_path": str(downloaded),
+            "manual_only": True,
+        }
+
+    if dry_run:
+        return {
+            "ok": True,
+            "changed": False,
+            "message": (
+                f"Dry run: download {spec['url']} -> {archive_path} and install into "
+                f"{install_root}"
+            ),
+            "status": status,
+            "download_url": spec["url"],
+            "download_path": str(archive_path),
+            "install_path": str(install_root),
+            "portable": True,
+        }
+
+    downloaded = _download_file(spec["url"], archive_path)
+    install_root.mkdir(parents=True, exist_ok=True)
+
+    actual_executable = None
+    install_mode = spec["install_mode"]
+    if install_mode == "zip-extract":
+        with zipfile.ZipFile(downloaded) as archive:
+            archive.extractall(install_root)
+        actual_executable = _find_first_match(install_root, spec.get("entry_globs", []))
+    elif install_mode == "tar-extract":
+        with tarfile.open(downloaded, mode="r:*") as archive:
+            archive.extractall(install_root)
+        actual_executable = _find_first_match(install_root, spec.get("entry_globs", []))
+    elif install_mode == "appimage":
+        binary_path = install_root / spec["filename"]
+        shutil.copy2(downloaded, binary_path)
+        binary_path.chmod(0o755)
+        actual_executable = binary_path
+    else:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"Unsupported portable install mode: {install_mode}",
+            "status": status,
+        }
+
+    if not actual_executable or not Path(actual_executable).exists():
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"Installed package for {status['label']} but could not locate the executable.",
+            "status": status,
+            "download_path": str(downloaded),
+            "install_path": str(install_root),
+        }
+
+    wrappers = _write_wrapper(tool_key, actual_executable)
+    return {
+        "ok": True,
+        "changed": True,
+        "message": (
+            f"Installed {status['label']} locally in {install_root}. "
+            f"Launcher wrapper: {wrappers[0]}"
+        ),
+        "status": status,
+        "download_url": spec["url"],
+        "download_path": str(downloaded),
+        "install_path": str(install_root),
+        "wrapper_paths": [str(path) for path in wrappers],
+        "portable": True,
+    }
+
+
 def get_external_tool_status(tool_key, environment=None):
     if tool_key not in THIRD_PARTY_TOOLS:
         raise ValueError(f"Unsupported external tool '{tool_key}'.")
@@ -335,6 +763,10 @@ def get_external_tool_status(tool_key, environment=None):
         "manual_install": meta.get("manual_install"),
         "homepage": meta.get("homepage"),
         "download_url": meta.get("download_url"),
+        "download_supported": _download_supported(tool_key, environment=environment),
+        "portable_install_supported": _portable_install_supported(tool_key, environment=environment),
+        "local_tool_root": str((LOCAL_TOOLS_ROOT / tool_key).expanduser()),
+        "local_bin_root": str(LOCAL_BIN_ROOT.expanduser()),
     }
     return status
 
@@ -360,9 +792,15 @@ def list_external_tool_install_methods(tool_key):
 
 
 def describe_external_tool(tool_key, environment=None):
+    environment = environment or detect_host_environment()
     status = get_external_tool_status(tool_key, environment=environment)
     meta = THIRD_PARTY_TOOLS[tool_key]
     host_command, host_manager = build_install_command(tool_key, environment=environment, interactive=True)
+    download_spec = None
+    try:
+        download_spec = _resolve_download_spec(tool_key, environment=environment)
+    except Exception:
+        download_spec = None
     return {
         "status": status,
         "homepage": meta.get("homepage"),
@@ -371,6 +809,12 @@ def describe_external_tool(tool_key, environment=None):
         "host_install_command": host_command,
         "host_install_manager": host_manager,
         "install_methods": list_external_tool_install_methods(tool_key),
+        "download_supported": status["download_supported"],
+        "portable_install_supported": status["portable_install_supported"],
+        "local_tool_root": status["local_tool_root"],
+        "local_bin_root": status["local_bin_root"],
+        "resolved_download_url": download_spec.get("url") if download_spec else None,
+        "resolved_download_filename": download_spec.get("filename") if download_spec else None,
     }
 
 
@@ -386,7 +830,11 @@ def render_external_tool_detail_lines(tool_key, environment=None):
     if detail.get("homepage"):
         lines.append(f"  homepage: {detail['homepage']}")
     if detail.get("download_url"):
-        lines.append(f"  download: {detail['download_url']}")
+        lines.append(f"  download_page: {detail['download_url']}")
+    if detail.get("resolved_download_url"):
+        lines.append(f"  resolved_package: {detail['resolved_download_url']}")
+    if detail.get("resolved_download_filename"):
+        lines.append(f"  package_name: {detail['resolved_download_filename']}")
     if detail.get("host_install_command"):
         lines.append(
             "  host_install: "
@@ -394,13 +842,17 @@ def render_external_tool_detail_lines(tool_key, environment=None):
         )
     else:
         lines.append("  host_install: unavailable on this host")
+    lines.append(
+        f"  one_click_local_install: {'yes' if detail.get('portable_install_supported') else 'no'}"
+    )
+    if detail.get("portable_install_supported"):
+        lines.append(f"  local_install_root: {detail['local_tool_root']}")
+        lines.append(f"  local_launcher_root: {detail['local_bin_root']}")
     methods = detail.get("install_methods", [])
     if methods:
         lines.append("  package_methods:")
         for method in methods:
-            lines.append(
-                f"    - {method['manager_label']}: {' '.join(method['command'])}"
-            )
+            lines.append(f"    - {method['manager_label']}: {' '.join(method['command'])}")
     manual_install = detail.get("manual_install")
     if manual_install:
         lines.append(f"  manual: {manual_install}")
@@ -417,6 +869,7 @@ def render_external_tool_status_lines(snapshot):
     environment = snapshot.get("environment", {})
     lines = [
         f"Host OS: {environment.get('os_label', 'Unknown')}",
+        f"Architecture: {environment.get('arch', 'Unknown')}",
         f"Package manager: {environment.get('primary_package_manager_label', 'None detected')}",
     ]
     distro = environment.get("distro")
@@ -431,10 +884,18 @@ def render_external_tool_status_lines(snapshot):
             suffix = f" version={version}" if version else ""
             lines.append(f"- {item['label']}: installed ({detail}){suffix}")
             continue
-        if item.get("install_supported"):
+        if item.get("portable_install_supported"):
+            lines.append(
+                f"- {item['label']}: missing, one-click local install available under {item['local_tool_root']}"
+            )
+        elif item.get("install_supported"):
             lines.append(
                 f"- {item['label']}: missing, install via {item.get('install_manager_label')} -> "
                 f"{item.get('install_command')}"
+            )
+        elif item.get("download_supported"):
+            lines.append(
+                f"- {item['label']}: missing, downloadable package available from {item.get('download_url')}"
             )
         else:
             lines.append(
@@ -455,7 +916,23 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
         }
 
     command, manager_key = build_install_command(tool_key, environment=environment, interactive=False)
+    display_command, _ = build_install_command(tool_key, environment=environment, interactive=True)
+    prefer_portable = status["portable_install_supported"] and (
+        not command
+        or (
+            manager_key
+            and PACKAGE_MANAGERS[manager_key]["requires_root"]
+            and os.name == "posix"
+            and getattr(os, "geteuid", lambda: 1)() != 0
+        )
+    )
+
+    if prefer_portable:
+        return _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
+
     if not command:
+        if status["portable_install_supported"]:
+            return _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
         return {
             "ok": False,
             "changed": False,
@@ -464,7 +941,6 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
             "manual_only": True,
         }
 
-    display_command, _ = build_install_command(tool_key, environment=environment, interactive=True)
     if dry_run:
         return {
             "ok": True,
@@ -479,16 +955,36 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
     ok = completed.returncode == 0
     output = (completed.stdout or completed.stderr or "").strip()
     if ok:
-        message = f"Installed {status['label']} using {PACKAGE_MANAGERS[manager_key]['label']}."
-    else:
-        message = (
+        return {
+            "ok": True,
+            "changed": True,
+            "message": f"Installed {status['label']} using {PACKAGE_MANAGERS[manager_key]['label']}.",
+            "status": status,
+            "command": display_command,
+            "manager": manager_key,
+            "returncode": completed.returncode,
+            "output": output,
+        }
+
+    if status["portable_install_supported"]:
+        fallback = _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
+        fallback_output = output
+        if fallback.get("output"):
+            fallback_output = "\n".join([fallback_output, fallback["output"]]).strip()
+        fallback["message"] = (
+            f"Package-manager install failed; attempted local install fallback. {fallback['message']}"
+        )
+        if fallback_output:
+            fallback["output"] = fallback_output
+        return fallback
+
+    return {
+        "ok": False,
+        "changed": False,
+        "message": (
             f"Install failed for {status['label']}. "
             f"Run manually if needed: {' '.join(display_command)}"
-        )
-    return {
-        "ok": ok,
-        "changed": ok,
-        "message": message,
+        ),
         "status": status,
         "command": display_command,
         "manager": manager_key,

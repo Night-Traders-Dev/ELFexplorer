@@ -129,6 +129,25 @@ class InstallDepsTests(unittest.TestCase):
         self.assertIn("Host install: sudo apt-get install -y radare2", output)
         self.assertIn("Package-manager methods:", output)
 
+    def test_main_download_tool_prints_download_target(self):
+        result = {
+            "ok": True,
+            "message": "Downloaded package",
+            "status": {"label": "Ghidra"},
+            "download_url": "https://example.invalid/ghidra.zip",
+            "download_path": "/tmp/ghidra.zip",
+        }
+        capture = io.StringIO()
+        with mock.patch.object(self.mod, "download_external_tool", return_value=result), redirect_stdout(
+            capture
+        ):
+            rc = self.mod.main(["--download-tool", "ghidra"])
+        self.assertEqual(rc, 0)
+        output = capture.getvalue()
+        self.assertIn("Tool: Ghidra", output)
+        self.assertIn("Download URL: https://example.invalid/ghidra.zip", output)
+        self.assertIn("Download Path: /tmp/ghidra.zip", output)
+
 
 if __name__ == "__main__":
     unittest.main()

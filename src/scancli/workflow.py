@@ -12,6 +12,7 @@ from advanced.toolbridge import (
 from advanced.tooling import (
     collect_external_tool_status,
     describe_external_tool,
+    download_external_tool,
     install_external_tool,
 )
 from reporting.export import (
@@ -244,6 +245,7 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
         "export_tool_plugin": export_tool_plugin,
         "tooling_snapshot": collect_external_tool_status,
         "tooling_detail": describe_external_tool,
+        "download_external_tool": download_external_tool,
         "install_external_tool": install_external_tool,
         "show_report": lambda report: display_report(report, ui_mode=ui_mode, explicit_ui=explicit_ui),
     }

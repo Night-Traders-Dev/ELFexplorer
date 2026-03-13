@@ -137,7 +137,7 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
-                    "tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-install <tool>\n"
+                    "tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
                     "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
                     "edit-open <path> | edit-status | edit-show-elf | edit-show-uf2 | edit-list-phdr | edit-list-shdr | edit-list-blocks | edit-show-block <idx> | edit-hex [offset] [length] [width]\n"
@@ -170,6 +170,11 @@ def run_textual_workspace(callbacks):
                     f"Tooling: Show Install Methods for {meta['label']}",
                     f"Show download URLs and install methods for {meta['label']}",
                     lambda tool_key=tool_key: self.action_show_tool_info(tool_key),
+                )
+                yield SystemCommand(
+                    f"Tooling: Download {meta['label']}",
+                    f"Download the current package for {meta['label']}",
+                    lambda tool_key=tool_key: self.action_download_external_tool(tool_key),
                 )
                 yield SystemCommand(
                     f"Tooling: Install {meta['label']}",
@@ -299,6 +304,17 @@ def run_textual_workspace(callbacks):
                 for line in output.splitlines():
                     self._log(f"  {line}")
 
+        def action_download_external_tool(self, tool_key):
+            result = callbacks["download_external_tool"](tool_key)
+            if result.get("ok"):
+                self._log(f"[green]{result['message']}[/green]")
+            else:
+                self._log(f"[yellow]{result['message']}[/yellow]")
+            if result.get("download_url"):
+                self._log(f"  url: {result['download_url']}")
+            if result.get("download_path"):
+                self._log(f"  path: {result['download_path']}")
+
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()
             event.input.value = ""
@@ -327,7 +343,7 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
-                    self._log("tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-install <tool>")
+                    self._log("tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>")
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <path> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
@@ -500,6 +516,13 @@ def run_textual_workspace(callbacks):
                         self._log("[red]Usage:[/red] tool-install <tool>")
                         return
                     self.action_install_external_tool(args[0])
+                    return
+
+                if command == "tool-download":
+                    if not args:
+                        self._log("[red]Usage:[/red] tool-download <tool>")
+                        return
+                    self.action_download_external_tool(args[0])
                     return
 
                 if command == "tool-export":
