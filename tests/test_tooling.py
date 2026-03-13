@@ -110,6 +110,33 @@ class ToolingTests(unittest.TestCase):
         self.assertTrue(result["manual_only"])
         self.assertIn("manual", result["message"].lower())
 
+    def test_describe_external_tool_includes_download_and_methods(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "package_managers": ["apt"],
+            "primary_package_manager": "apt",
+            "primary_package_manager_label": "APT",
+        }
+
+        def fake_which(name):
+            if name == "sudo":
+                return "/usr/bin/sudo"
+            return None
+
+        with mock.patch("advanced.tooling.shutil.which", side_effect=fake_which), mock.patch(
+            "advanced.tooling.os.geteuid",
+            return_value=1000,
+        ):
+            detail = tooling.describe_external_tool("radare2", environment=environment)
+
+        self.assertEqual(detail["status"]["label"], "radare2")
+        self.assertTrue(detail["download_url"].startswith("https://"))
+        self.assertTrue(detail["homepage"].startswith("https://"))
+        self.assertTrue(detail["install_methods"])
+        self.assertEqual(detail["install_methods"][0]["manager"], "brew")
+        self.assertIn("apt-get", " ".join(detail["host_install_command"]))
+
 
 if __name__ == "__main__":
     unittest.main()

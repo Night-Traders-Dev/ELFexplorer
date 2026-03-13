@@ -11,6 +11,7 @@ from advanced.tooling import (
     collect_external_tool_status,
     install_external_tool,
     list_external_tools,
+    render_external_tool_detail_lines,
     render_external_tool_status_lines,
 )
 from edit import ElfEditError, open_binary_editor
@@ -196,6 +197,11 @@ def run_textual_report(report: Dict):
             )
             for tool_key, meta in sorted(list_external_tools().items()):
                 yield SystemCommand(
+                    f"Tooling: Show Install Methods for {meta['label']}",
+                    f"Show download and install methods for {meta['label']}",
+                    lambda tool_key=tool_key: self.action_show_external_tool_info(tool_key),
+                )
+                yield SystemCommand(
                     f"Tooling: Install {meta['label']}",
                     f"Install {meta['label']} using the detected package manager when supported",
                     lambda tool_key=tool_key: self.action_install_external_tool(tool_key),
@@ -275,10 +281,17 @@ def run_textual_report(report: Dict):
                 table.add_row(*row)
             note.update(
                 "External-tool exports are generated from the current report's symbols, sections, and "
-                "comments. Use the command palette to export scripts for disassemblers and memory-mapping tools."
+                "comments. Use the command palette to export scripts for disassemblers and memory-mapping tools, "
+                "or inspect download/install methods for supported third-party tools."
             )
             snapshot = collect_external_tool_status()
-            tooling_status.update("\n".join(render_external_tool_status_lines(snapshot)))
+            lines = list(render_external_tool_status_lines(snapshot))
+            lines.append("")
+            lines.append("Install methods:")
+            for tool_key in sorted(list_external_tools()):
+                lines.extend(render_external_tool_detail_lines(tool_key, environment=snapshot["environment"]))
+                lines.append("")
+            tooling_status.update("\n".join(lines).rstrip())
 
         def _refresh_view(self):
             summary = self.query_one("#summary", Static)
@@ -503,6 +516,18 @@ def run_textual_report(report: Dict):
         def action_check_external_tools(self):
             self._refresh_view()
             self.notify("External tool status refreshed.", title="Tooling", severity="information")
+
+        def action_show_external_tool_info(self, tool_key: str):
+            snapshot = collect_external_tool_status()
+            detail_lines = render_external_tool_detail_lines(
+                tool_key, environment=snapshot["environment"]
+            )
+            self._refresh_view()
+            self.notify(
+                f"{detail_lines[0]} | See Integrations tab for full install details.",
+                title="Tooling",
+                severity="information",
+            )
 
         def action_export_markdown(self):
             self._export_markdown()

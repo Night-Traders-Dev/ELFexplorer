@@ -325,6 +325,7 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - RE merge policy control: `--re-merge-policy union|prefer-import|prefer-scan`
 - print known host-managed external tools: `python3 install_deps.py --print-tools`
 - inspect host OS/package manager + tool status: `python3 install_deps.py --check-tools`
+- print download/install methods for a specific tool: `python3 install_deps.py --tool-info <tool>`
 - install external tool when supported: `python3 install_deps.py --install-tool <tool>`
 
 External-tool export notes:
@@ -337,6 +338,7 @@ External-tool export notes:
 
 When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
 - external tool status refresh command
+- per-tool install-method commands (homepage, download URL, host install route)
 - install commands for known external tools (auto-install where supported, manual guidance otherwise)
 - Markdown export command
 - PDF export command
@@ -391,6 +393,9 @@ Current behavior:
 - detect available package managers in host-priority order
 - choose a primary package manager for install suggestions
 - check whether external tools are already installed via PATH/common install locations
+- expose official homepage/download URLs for supported tools
+- expose host-aware install commands when the current environment supports package-managed install
+- expose all known package-manager install methods for each tool
 - synthesize install commands only when a verified package recipe exists
 - fall back to manual vendor/install guidance for tools that are not safely package-managed on the current host
 
@@ -403,6 +408,15 @@ Current automatic-install coverage is conservative by design:
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
 
 Commercial/vendor-distributed tools such as `IDA Pro` are still status-checked, but installation remains manual.
+
+Official download/home pages currently surfaced by the tooling layer:
+- `binaryninja`: `https://binary.ninja/free/`
+- `ghidra`: `https://ghidra-sre.org/`
+- `ida`: `https://hex-rays.com/ida-pro/`
+- `radare2`: `https://book.rada.re/install/index.html`
+- `cutter`: `https://cutter.re/`
+- `rizin`: `https://rizin.re/`
+- `imhex`: `https://imhex.werwolv.net/`
 
 ## 11. Textual Workspace Command Surface
 
@@ -419,6 +433,7 @@ Workspace commands:
 - `export-collection-md <path>`
 - `export-collection-pdf <path>`
 - `tool-status`
+- `tool-info <tool>`
 - `tool-install <tool>`
 - `tool-list`
 - `tool-export <format> [path]`

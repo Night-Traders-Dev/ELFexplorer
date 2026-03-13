@@ -103,6 +103,32 @@ class InstallDepsTests(unittest.TestCase):
         self.assertIn("Tool: radare2", output)
         self.assertIn("Command: sudo apt-get install -y radare2", output)
 
+    def test_main_tool_info_prints_download_and_methods(self):
+        detail = {
+            "status": {"label": "radare2", "installed": False, "path": None, "version": None},
+            "homepage": "https://rada.re/n/",
+            "download_url": "https://book.rada.re/install/index.html",
+            "host_install_command": ["sudo", "apt-get", "install", "-y", "radare2"],
+            "install_methods": [
+                {
+                    "manager_label": "APT",
+                    "command": ["apt-get", "install", "-y", "radare2"],
+                }
+            ],
+            "manual_install": "Build from source if needed.",
+        }
+        capture = io.StringIO()
+        with mock.patch.object(self.mod, "describe_external_tool", return_value=detail), redirect_stdout(
+            capture
+        ):
+            rc = self.mod.main(["--tool-info", "radare2"])
+        self.assertEqual(rc, 0)
+        output = capture.getvalue()
+        self.assertIn("Tool: radare2 (radare2)", output)
+        self.assertIn("Download: https://book.rada.re/install/index.html", output)
+        self.assertIn("Host install: sudo apt-get install -y radare2", output)
+        self.assertIn("Package-manager methods:", output)
+
 
 if __name__ == "__main__":
     unittest.main()

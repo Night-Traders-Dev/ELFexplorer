@@ -22,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
 from advanced.tooling import (
     collect_external_tool_status,
     install_external_tool,
+    describe_external_tool,
     list_external_tools,
 )
 
@@ -120,6 +121,13 @@ def parse_args(argv=None):
         default=[],
         help="Install one or more external tools if supported on this host.",
     )
+    parser.add_argument(
+        "--tool-info",
+        action="append",
+        choices=tuple(sorted(list_external_tools())),
+        default=[],
+        help="Print download/install methods for one or more external tools.",
+    )
     return parser.parse_args(argv)
 
 
@@ -155,6 +163,37 @@ def main(argv=None):
                 print(f"  - {item['label']}: missing, install with {item['install_command']}")
             else:
                 print(f"  - {item['label']}: missing, manual install required")
+        if not args.install_tool:
+            if not args.tool_info:
+                return 0
+
+    if args.tool_info:
+        for tool_key in args.tool_info:
+            detail = describe_external_tool(tool_key)
+            status = detail["status"]
+            print(f"Tool: {status['label']} ({tool_key})")
+            print(f"Installed: {'yes' if status['installed'] else 'no'}")
+            if status.get("path"):
+                print(f"Path: {status['path']}")
+            if status.get("version"):
+                print(f"Version: {status['version']}")
+            if detail.get("homepage"):
+                print(f"Homepage: {detail['homepage']}")
+            if detail.get("download_url"):
+                print(f"Download: {detail['download_url']}")
+            host_install = detail.get("host_install_command")
+            if host_install:
+                print("Host install:", " ".join(host_install))
+            else:
+                print("Host install: unavailable on this host")
+            methods = detail.get("install_methods", [])
+            if methods:
+                print("Package-manager methods:")
+                for method in methods:
+                    print(f"  - {method['manager_label']}: {' '.join(method['command'])}")
+            if detail.get("manual_install"):
+                print("Manual:", detail["manual_install"])
+            print()
         if not args.install_tool:
             return 0
 

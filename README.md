@@ -266,6 +266,7 @@ python3 install_deps.py --profile all --upgrade
 python3 install_deps.py --print-groups
 python3 install_deps.py --print-tools
 python3 install_deps.py --check-tools
+python3 install_deps.py --tool-info ghidra
 python3 install_deps.py --install-tool radare2 --dry-run
 ```
 
@@ -363,7 +364,7 @@ The workspace supports:
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - tool integrations (`tool-list`, `tool-export <format> [path]`)
-- host tooling checks/install (`tool-status`, `tool-install <tool>`)
+- host tooling checks/install (`tool-status`, `tool-info <tool>`, `tool-install <tool>`)
 - summary display (`show`)
 - advanced ELF editing:
   - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
@@ -456,6 +457,13 @@ Inside the Textual report viewer (`--ui textual` with a file path), use `Ctrl+P`
 
 Custom report commands include:
 - `Tooling: Check External Tools`
+- `Tooling: Show Install Methods for Binary Ninja`
+- `Tooling: Show Install Methods for Ghidra`
+- `Tooling: Show Install Methods for IDA Pro`
+- `Tooling: Show Install Methods for radare2`
+- `Tooling: Show Install Methods for Cutter`
+- `Tooling: Show Install Methods for Rizin`
+- `Tooling: Show Install Methods for ImHex`
 - `Tooling: Install Binary Ninja`
 - `Tooling: Install Ghidra`
 - `Tooling: Install IDA Pro`
@@ -574,6 +582,7 @@ Host tooling detection and install support:
 ```bash
 python3 install_deps.py --print-tools
 python3 install_deps.py --check-tools
+python3 install_deps.py --tool-info radare2
 python3 install_deps.py --install-tool radare2 --dry-run
 python3 install_deps.py --install-tool ghidra
 ```
@@ -581,6 +590,9 @@ python3 install_deps.py --install-tool ghidra
 Current behavior:
 - detects host OS and primary package manager
 - checks whether supported third-party tools are already installed
+- prints official homepage/download locations for supported tools
+- prints host-aware install commands when the current OS/package manager is supported
+- prints all known package-manager install methods for each supported tool
 - uses verified package-manager recipes where available
 - falls back to manual-install guidance for tools such as vendor-managed commercial distributions
 
@@ -591,6 +603,15 @@ Current automatic-install coverage is intentionally conservative:
 - `cutter`: `dnf`, `pacman`
 - `rizin`: `dnf`, `pacman`
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
+
+Official download/home pages used by the tooling layer:
+- `binaryninja`: `https://binary.ninja/free/`
+- `ghidra`: `https://ghidra-sre.org/`
+- `ida`: `https://hex-rays.com/ida-pro/`
+- `radare2`: `https://book.rada.re/install/index.html`
+- `cutter`: `https://cutter.re/`
+- `rizin`: `https://rizin.re/`
+- `imhex`: `https://imhex.werwolv.net/`
 
 ## Testing
 

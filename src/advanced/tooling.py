@@ -80,6 +80,8 @@ PACKAGE_MANAGER_PRIORITY = {
 THIRD_PARTY_TOOLS = {
     "binaryninja": {
         "label": "Binary Ninja",
+        "homepage": "https://binary.ninja/free/",
+        "download_url": "https://binary.ninja/free/",
         "executables": ("binaryninja", "binaryninja-free"),
         "path_hints": (
             "~/Applications/Binary Ninja.app/Contents/MacOS/binaryninja",
@@ -99,6 +101,8 @@ THIRD_PARTY_TOOLS = {
     },
     "ghidra": {
         "label": "Ghidra",
+        "homepage": "https://ghidra-sre.org/",
+        "download_url": "https://github.com/NationalSecurityAgency/ghidra/releases",
         "executables": ("ghidraRun", "ghidra"),
         "path_hints": (
             "/opt/ghidra*/ghidraRun",
@@ -117,6 +121,8 @@ THIRD_PARTY_TOOLS = {
     },
     "ida": {
         "label": "IDA Pro",
+        "homepage": "https://hex-rays.com/ida-pro/",
+        "download_url": "https://hex-rays.com/ida-pro/",
         "executables": ("ida64", "ida", "idat64", "idaq64"),
         "path_hints": (
             "/Applications/IDA Professional*/ida64.app/Contents/MacOS/ida64",
@@ -129,6 +135,8 @@ THIRD_PARTY_TOOLS = {
     },
     "radare2": {
         "label": "radare2",
+        "homepage": "https://rada.re/n/",
+        "download_url": "https://book.rada.re/install/index.html",
         "executables": ("r2", "radare2"),
         "path_hints": (),
         "version_args": ("-v",),
@@ -142,6 +150,8 @@ THIRD_PARTY_TOOLS = {
     },
     "cutter": {
         "label": "Cutter",
+        "homepage": "https://cutter.re/",
+        "download_url": "https://github.com/rizinorg/cutter/releases",
         "executables": ("cutter",),
         "path_hints": (
             "/Applications/Cutter.app/Contents/MacOS/cutter",
@@ -158,6 +168,8 @@ THIRD_PARTY_TOOLS = {
     },
     "rizin": {
         "label": "Rizin",
+        "homepage": "https://rizin.re/",
+        "download_url": "https://github.com/rizinorg/rizin/releases",
         "executables": ("rizin", "rz-bin"),
         "path_hints": (),
         "version_args": ("-v",),
@@ -169,6 +181,8 @@ THIRD_PARTY_TOOLS = {
     },
     "imhex": {
         "label": "ImHex",
+        "homepage": "https://imhex.werwolv.net/",
+        "download_url": "https://github.com/WerWolv/ImHex/releases",
         "executables": ("imhex",),
         "path_hints": (
             "/Applications/ImHex.app/Contents/MacOS/imhex",
@@ -319,8 +333,78 @@ def get_external_tool_status(tool_key, environment=None):
         "install_manager_label": PACKAGE_MANAGERS[manager_key]["label"] if manager_key else None,
         "install_command": " ".join(install_command) if install_command else None,
         "manual_install": meta.get("manual_install"),
+        "homepage": meta.get("homepage"),
+        "download_url": meta.get("download_url"),
     }
     return status
+
+
+def list_external_tool_install_methods(tool_key):
+    if tool_key not in THIRD_PARTY_TOOLS:
+        raise ValueError(f"Unsupported external tool '{tool_key}'.")
+    meta = THIRD_PARTY_TOOLS[tool_key]
+    methods = []
+    for manager_key, recipe in meta.get("install", {}).items():
+        manager = PACKAGE_MANAGERS[manager_key]
+        prefix = list(manager["cask_prefix"] if recipe.get("cask") else manager["install_prefix"])
+        command = prefix + [recipe["package"]]
+        methods.append(
+            {
+                "manager": manager_key,
+                "manager_label": manager["label"],
+                "package": recipe["package"],
+                "command": command,
+            }
+        )
+    return methods
+
+
+def describe_external_tool(tool_key, environment=None):
+    status = get_external_tool_status(tool_key, environment=environment)
+    meta = THIRD_PARTY_TOOLS[tool_key]
+    host_command, host_manager = build_install_command(tool_key, environment=environment, interactive=True)
+    return {
+        "status": status,
+        "homepage": meta.get("homepage"),
+        "download_url": meta.get("download_url"),
+        "manual_install": meta.get("manual_install"),
+        "host_install_command": host_command,
+        "host_install_manager": host_manager,
+        "install_methods": list_external_tool_install_methods(tool_key),
+    }
+
+
+def render_external_tool_detail_lines(tool_key, environment=None):
+    detail = describe_external_tool(tool_key, environment=environment)
+    status = detail["status"]
+    lines = [f"{status['label']} ({tool_key})"]
+    lines.append(f"  installed: {'yes' if status['installed'] else 'no'}")
+    if status.get("path"):
+        lines.append(f"  path: {status['path']}")
+    if status.get("version"):
+        lines.append(f"  version: {status['version']}")
+    if detail.get("homepage"):
+        lines.append(f"  homepage: {detail['homepage']}")
+    if detail.get("download_url"):
+        lines.append(f"  download: {detail['download_url']}")
+    if detail.get("host_install_command"):
+        lines.append(
+            "  host_install: "
+            f"{PACKAGE_MANAGERS[detail['host_install_manager']]['label']} -> {' '.join(detail['host_install_command'])}"
+        )
+    else:
+        lines.append("  host_install: unavailable on this host")
+    methods = detail.get("install_methods", [])
+    if methods:
+        lines.append("  package_methods:")
+        for method in methods:
+            lines.append(
+                f"    - {method['manager_label']}: {' '.join(method['command'])}"
+            )
+    manual_install = detail.get("manual_install")
+    if manual_install:
+        lines.append(f"  manual: {manual_install}")
+    return lines
 
 
 def collect_external_tool_status(environment=None):
