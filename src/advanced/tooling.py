@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11.10 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.12.0 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {

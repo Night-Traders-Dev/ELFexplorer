@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.10-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,21 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.12.0
+
+- Added a responsive web dashboard UI mode via `--ui web`.
+- Added browser-native workflows for:
+  - single-report viewing
+  - collection viewing
+  - no-input workspace launch
+  - scan, crawl, load-scan, and load-collection actions from the dashboard
+  - JSON download plus Markdown/PDF export for the active report
+- Added web-dashboard runtime tests and helper coverage.
+- Added new web UI controls:
+  - `--web-host`
+  - `--web-port`
+  - `--web-open-browser`
 
 ## What Changed in 0.11.10
 
@@ -343,7 +358,10 @@ python3 src/elfscan.py [filepath] [options]
 
 Core options:
 
-- `--ui plain|textual` (default: `textual`)
+- `--ui plain|textual|web` (default: `textual`)
+- `--web-host <host>`
+- `--web-port <port>`
+- `--web-open-browser`
 - `-m, --mode general|important|detailed`
 - `--crawl <directory>`
 - `--no-recursive`
@@ -413,7 +431,38 @@ python3 src/elfscan.py --list-tool-plugins
 python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format ghidra --tool-plugin-export
 python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format binaryninja --tool-plugin-export reports/hello_c-bn.py
 python3 src/elfscan.py --crawl test-bin --tool-plugin-format imhex --tool-plugin-export reports/imhex-maps
+python3 src/elfscan.py --ui web --web-open-browser
+python3 src/elfscan.py --ui web test-bin/x86_64/hello_rust --web-port 9000
 ```
+
+## Web Dashboard
+
+Launch the browser dashboard directly:
+
+```bash
+python3 src/elfscan.py --ui web --web-open-browser
+```
+
+Or open a specific report target in the dashboard:
+
+```bash
+python3 src/elfscan.py --ui web test-bin/x86_64/hello_go
+```
+
+Current dashboard workflows:
+- responsive browser UI with theme switching
+- scan a single binary path
+- crawl a directory of supported binaries
+- load a saved scan JSON
+- load a saved collection JSON
+- browse multiple reports and switch active report instantly
+- export the active report to Markdown or PDF
+- download the active report as JSON
+
+Current web controls:
+- `--web-host`: bind interface, default `127.0.0.1`
+- `--web-port`: bind port, default `8765`
+- `--web-open-browser`: open the default browser automatically
 
 ## Textual Workspace (Default UX)
 

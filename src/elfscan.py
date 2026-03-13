@@ -28,7 +28,7 @@ from advanced.signatures import (
 )
 from advanced.toolbridge import list_tool_plugin_formats
 from scancli.args import build_parser
-from scancli.render import display_report, print_collection_summary
+from scancli.render import display_report, print_collection_summary, run_web_dashboard
 from scancli.scan import build_scan_report
 from scancli.styles import FG_MAGENTA, STYLE_BOLD, styled
 from scancli.workflow import (
@@ -38,6 +38,7 @@ from scancli.workflow import (
     handle_no_input,
     save_and_export_collection,
     save_and_export_single,
+    workspace_callbacks,
 )
 
 
@@ -171,12 +172,13 @@ def main():
 
         if len(reports) == 1:
             report = reports[0]
-            display_report(
-                report,
-                ui_mode=args.ui,
-                explicit_ui=explicit_ui,
-                show_explain=args.explain,
-            )
+            if args.ui != "web":
+                display_report(
+                    report,
+                    ui_mode=args.ui,
+                    explicit_ui=explicit_ui,
+                    show_explain=args.explain,
+                )
 
             if args.diff:
                 other_report = build_scan_report(args.diff, mode=args.mode, options=scan_options)
@@ -208,10 +210,28 @@ def main():
                     for line in ci_result["violations"]:
                         print(f"  - {line}")
                     return 3
+            if args.ui == "web":
+                callbacks = workspace_callbacks(
+                    args.ui,
+                    explicit_ui,
+                    args.store_dir,
+                    scan_options=scan_options,
+                )
+                if run_web_dashboard(
+                    [report],
+                    callbacks=callbacks,
+                    explicit_ui=explicit_ui,
+                    host=args.web_host,
+                    port=args.web_port,
+                    open_browser=args.web_open_browser,
+                ):
+                    return 0
+                display_report(report, ui_mode="plain", explicit_ui=explicit_ui, show_explain=args.explain)
             return 0
 
-        print_collection_summary(reports)
-        if args.show_each:
+        if args.ui != "web":
+            print_collection_summary(reports)
+        if args.show_each and args.ui != "web":
             for report in reports:
                 display_report(
                     report,
@@ -232,6 +252,23 @@ def main():
                 for line in ci_result["violations"]:
                     print(f"  - {line}")
                 return 3
+        if args.ui == "web":
+            callbacks = workspace_callbacks(
+                args.ui,
+                explicit_ui,
+                args.store_dir,
+                scan_options=scan_options,
+            )
+            if run_web_dashboard(
+                reports,
+                callbacks=callbacks,
+                explicit_ui=explicit_ui,
+                host=args.web_host,
+                port=args.web_port,
+                open_browser=args.web_open_browser,
+            ):
+                return 0
+            print_collection_summary(reports)
         return 0
     except Exception as exc:
         msg = styled("Error processing ELF file:", STYLE_BOLD, FG_MAGENTA)

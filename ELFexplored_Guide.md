@@ -292,12 +292,13 @@ Implemented controls:
 ### 10.1 UI mode
 
 - default: `--ui textual`
-- fallback: `--ui plain`
+- alternatives: `--ui plain`, `--ui web`
 
 ### 10.2 No-input behavior
 
 When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--load-collection`:
 - attempts to launch Textual workspace UX
+- can launch the web dashboard workspace with `--ui web`
 - if unavailable, prints guidance and exits non-zero
 
 ### 10.3 Workload modes
@@ -375,7 +376,7 @@ Additional quick bindings in report view:
 
 ### 10.6 Settings Persistence
 
-User-facing UI preferences are stored in `settings.conf` (JSON, repository root).
+User-facing Textual UI preferences are stored in `settings.conf` (JSON, repository root).
 
 Current persisted preference:
 - `theme`: Textual theme selected via command palette
@@ -393,6 +394,8 @@ Custom ELFexplorer themes:
 - `elfexplorer-oceanic`
 - `elfexplorer-forge`
 - `elfexplorer-verdant`
+
+Web dashboard theme selection is client-side and stored in browser local storage.
 
 ### 10.7 Advanced Analysis Flags
 
@@ -577,6 +580,35 @@ Controls currently exposed:
 - UART bridge port / connect target
 - wire socket paths for UART0 / GPIO
 - toggles for `stdin`, core 1 debug, memory debug, `no-boot2`, and `jit`
+
+### 11.1c Web Dashboard
+
+ELFexplorer now also exposes a web-native dashboard mode through `--ui web`.
+
+Startup model:
+- starts an internal threaded HTTP server
+- prints the dashboard URL to stdout
+- optionally opens the default browser when `--web-open-browser` is used
+- supports custom bind address and port through `--web-host` and `--web-port`
+
+Current dashboard capabilities:
+- responsive two-column shell with browser-side theme switching
+- scan form for a single supported binary path
+- crawl form for directory-based batch scans
+- load saved scan JSON
+- load saved collection JSON
+- saved-report list populated from the managed scan store
+- report switcher for multi-report dashboards
+- active-report overview cards
+- score tables for artifact/language/compiler/build-system layers
+- metadata, evidence, and raw JSON panels
+- Markdown/PDF export for the active report
+- direct JSON download for the active report
+
+The web dashboard is intentionally dependency-light:
+- Python stdlib HTTP server backend
+- no mandatory Flask/FastAPI dependency
+- existing scan/export callbacks are reused from the CLI workflow layer
 
 ### 11.2 Split-Pane Editor Workbench
 

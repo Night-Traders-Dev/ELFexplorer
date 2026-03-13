@@ -31,7 +31,7 @@ from reporting.persistence import (
 from reporting.tasks import run_task_file
 from settings import load_tool_path, load_tool_paths
 
-from .render import display_report, run_textual_workspace
+from .render import display_report, run_textual_workspace, run_web_dashboard
 from .scan import build_scan_report, is_supported_binary, report_timestamp
 
 
@@ -266,6 +266,22 @@ def handle_no_input(args, explicit_ui):
             scan_options=build_scan_options(args),
         )
         if run_textual_workspace(callbacks, explicit_ui=explicit_ui):
+            return 0
+    if args.ui == "web":
+        callbacks = workspace_callbacks(
+            args.ui,
+            explicit_ui,
+            args.store_dir,
+            scan_options=build_scan_options(args),
+        )
+        if run_web_dashboard(
+            [],
+            callbacks=callbacks,
+            explicit_ui=explicit_ui,
+            host=args.web_host,
+            port=args.web_port,
+            open_browser=args.web_open_browser,
+        ):
             return 0
 
     print("No binary or workload specified.")

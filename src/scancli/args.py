@@ -31,9 +31,25 @@ def build_parser():
     )
     parser.add_argument(
         "--ui",
-        choices=["plain", "textual"],
+        choices=["plain", "textual", "web"],
         default="textual",
-        help="UI mode: textual (default) or plain.",
+        help="UI mode: textual (default), plain, or web.",
+    )
+    parser.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        help="Host/interface for the web dashboard server (used with --ui web).",
+    )
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=8765,
+        help="TCP port for the web dashboard server (used with --ui web).",
+    )
+    parser.add_argument(
+        "--web-open-browser",
+        action="store_true",
+        help="Open the default browser automatically when starting the web dashboard.",
     )
     parser.add_argument("--crawl", help="Recursively scan supported binaries under a directory.")
     parser.add_argument(

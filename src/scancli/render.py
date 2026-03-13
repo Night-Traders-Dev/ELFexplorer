@@ -247,7 +247,51 @@ def run_textual_workspace(callbacks, explicit_ui=False):
         return False
 
 
-def display_report(report, ui_mode="textual", explicit_ui=False, show_explain=False):
+def run_web_dashboard(
+    reports,
+    callbacks=None,
+    explicit_ui=False,
+    host="127.0.0.1",
+    port=8765,
+    open_browser=False,
+):
+    try:
+        from ui.web_dashboard import run_web_dashboard as run_web_dashboard_ui
+
+        run_web_dashboard_ui(
+            callbacks=callbacks,
+            initial_reports=reports,
+            host=host,
+            port=port,
+            open_browser=open_browser,
+        )
+        return True
+    except Exception as exc:
+        if explicit_ui:
+            print("Web dashboard unavailable, falling back to plain report.")
+            print(f"Reason: {exc}")
+        return False
+
+
+def display_report(
+    report,
+    ui_mode="textual",
+    explicit_ui=False,
+    show_explain=False,
+    callbacks=None,
+    web_host="127.0.0.1",
+    web_port=8765,
+    web_open_browser=False,
+):
+    if ui_mode == "web" and run_web_dashboard(
+        [report],
+        callbacks=callbacks,
+        explicit_ui=explicit_ui,
+        host=web_host,
+        port=web_port,
+        open_browser=web_open_browser,
+    ):
+        return
     if ui_mode == "textual" and run_textual_report(report, explicit_ui=explicit_ui):
         return
     print_plain_report(report, show_explain=show_explain)
