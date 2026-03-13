@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.12.1-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.12.2-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,26 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.12.2
+
+- Reduced web-dashboard scroll/render lag by:
+  - removing the expensive sticky-header blur path
+  - lazy-rendering heavy tabs instead of rebuilding all panels
+  - using delegated interactions for report/tool lists
+- Expanded web dashboard feature parity:
+  - save active report JSON
+  - save report collections
+  - export collection Markdown/PDF
+  - compare active report against another binary and export diff Markdown
+  - explainability, hardening, firmware, plugin, diff, and integrations tabs
+  - tool-plugin export and host-tool status/detail views from the browser
+- Expanded UF2 heuristics:
+  - official family coverage for RP2040/RP2350, SAMD, nRF52, STM32, ESP32, RA4M1, and others
+  - UF2 extension-tag parsing (firmware version, device description, page size, device type)
+  - file-container flag and embedded filename reporting
+  - `INFO_UF2`/bootloader text extraction for board/model hints
+- Added regression tests for the new web routes and UF2 parsing cases.
 
 ## What Changed in 0.12.1
 

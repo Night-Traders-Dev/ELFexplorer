@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.12.1` (see `VERSION`).
+Current release: `0.12.2` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -41,7 +41,10 @@ For firmware containers (UF2/Intel HEX/S-record/raw):
 - container-level parse/validation (record and checksum checks where applicable)
 - payload reconstruction into contiguous data blobs
 - address-range extraction when available
-- family/target hints (for example RP2040 UF2 family ID)
+- family/target hints (for example RP2040/RP2350 UF2 family IDs)
+- UF2 extension-tag extraction (firmware version, device description, page size, device type)
+- UF2 file-container flag and embedded filename extraction
+- embedded `INFO_UF2` / bootloader text extraction for board/model hints
 
 This layer supplies hard constraints and shape hints used by all upper layers.
 
@@ -601,13 +604,17 @@ Current dashboard capabilities:
 - report switcher for multi-report dashboards
 - active-report overview cards
 - score tables for artifact/language/compiler/build-system layers
-- metadata, evidence, and raw JSON panels
+- metadata, evidence, explainability, hardening, firmware, plugin, diff, integration, and raw JSON panels
+- save-report and save-collection JSON actions
 - Markdown/PDF export for the active report
+- collection Markdown/PDF export
+- diff against another binary from the browser
+- external-tool plugin export and host-tool status/detail inspection
 - direct JSON download for the active report
 
 Validation and regression coverage now include:
 - generated dashboard JavaScript syntax validation via `node --check`
-- local HTTP server tests for web `scan` and `export` routes
+- local HTTP server tests for web `scan`, `save`, `plugin export`, `tooling`, and `diff` routes
 - direct verification that the web action buttons map onto working API endpoints
 
 The web dashboard is intentionally dependency-light:

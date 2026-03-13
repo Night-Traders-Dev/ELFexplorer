@@ -1,7 +1,9 @@
+import re
 import struct
 from datetime import datetime, timezone
 from pathlib import Path
 
+from advanced.explain import build_scan_explanations
 from detect.constants import (
     ARTIFACT_CMSIS_MARKERS,
     ARTIFACT_FREERTOS_MARKERS,
@@ -65,11 +67,84 @@ UF2_BLOCK_SIZE = 512
 UF2_MAGIC_START0 = 0x0A324655
 UF2_MAGIC_START1 = 0x9E5D5157
 UF2_MAGIC_END = 0x0AB16F30
+UF2_FLAG_NOT_MAIN_FLASH = 0x00000001
+UF2_FLAG_FILE_CONTAINER = 0x00001000
 UF2_FLAG_FAMILY_ID_PRESENT = 0x00002000
+UF2_FLAG_MD5_PRESENT = 0x00004000
+UF2_FLAG_EXTENSION_TAGS_PRESENT = 0x00008000
 
-UF2_FAMILY_NAMES = {
-    0xE48BFF56: "RP2040",
+UF2_EXTENSION_TAG_FIRMWARE_VERSION = 0x9FC7BC
+UF2_EXTENSION_TAG_DEVICE_DESCRIPTION = 0x650D9D
+UF2_EXTENSION_TAG_PAGE_SIZE = 0x0BE9F7
+UF2_EXTENSION_TAG_SHA2 = 0xB46DB0
+UF2_EXTENSION_TAG_DEVICE_TYPE = 0xC8A729
+
+UF2_FAMILY_INFO = {
+    0x16573617: ("ATMEGA32", "Microchip (Atmel) ATmega32"),
+    0x1851780A: ("SAML21", "Microchip (Atmel) SAML21"),
+    0x1B57745F: ("NRF52", "Nordic NRF52"),
+    0x1C5F21B0: ("ESP32", "ESP32"),
+    0x1E1F432D: ("STM32L1", "ST STM32L1xx"),
+    0x202E3A91: ("STM32L0", "ST STM32L0xx"),
+    0x21460FF0: ("STM32WL", "ST STM32WLxx"),
+    0x2ABC77EC: ("LPC55", "NXP LPC55xx"),
+    0x300F5633: ("STM32G0", "ST STM32G0xx"),
+    0x31D228C6: ("GD32F350", "GD32F350"),
+    0x4FB2D5BD: ("MIMXRT10XX", "NXP i.MX RT10XX"),
+    0x53B80F00: ("STM32F7", "ST STM32F7xx"),
+    0x55114460: ("SAMD51", "Microchip (Atmel) SAMD51"),
+    0x57755A57: ("STM32F4", "ST STM32F4xx"),
+    0x5A18069B: ("FX2", "Cypress FX2"),
+    0x5D1A0A2E: ("STM32F2", "ST STM32F2xx"),
+    0x5EE21072: ("STM32F1", "ST STM32F103"),
+    0x621E937A: ("NRF52833", "Nordic NRF52833"),
+    0x647824B6: ("STM32F0", "ST STM32F0xx"),
+    0x68ED2B88: ("SAMD21", "Microchip (Atmel) SAMD21"),
+    0x6B846188: ("STM32F3", "ST STM32F3xx"),
+    0x6D0922FA: ("STM32F407", "ST STM32F407"),
+    0x6DB66082: ("STM32H7", "ST STM32H7xx"),
+    0x70D16653: ("STM32WB", "ST STM32WBxx"),
+    0x7EAB61ED: ("ESP8266", "ESP8266"),
+    0x820D9A5F: ("NRF52820", "Nordic NRF52820_xxAA"),
+    0xADA52840: ("NRF52840", "Nordic NRF52840"),
+    0xBFDD4EEE: ("ESP32S2", "ESP32-S2"),
+    0xC47E5767: ("ESP32S3", "ESP32-S3"),
+    0xD42BA06C: ("ESP32C3", "ESP32-C3"),
+    0x2B88D29C: ("ESP32C2", "ESP32-C2"),
+    0x332726F6: ("ESP32H2", "ESP32-H2"),
+    0x540DDF62: ("ESP32C6", "ESP32-C6"),
+    0x3D308E94: ("ESP32P4", "ESP32-P4"),
+    0xF71C0343: ("ESP32C5", "ESP32-C5"),
+    0x77D850C4: ("ESP32C61", "ESP32-C61"),
+    0xB6DD00AF: ("ESP32H21", "ESP32-H21"),
+    0x9E0BAA8A: ("ESP32H4", "ESP32-H4"),
+    0x3101F7C1: ("ESP32S31", "ESP32-S31"),
+    0xE48BFF56: ("RP2040", "Raspberry Pi RP2040"),
+    0xE48BFF57: ("RP2XXX_ABSOLUTE", "Raspberry Pi Microcontrollers: Absolute (unpartitioned) download"),
+    0xE48BFF58: ("RP2XXX_DATA", "Raspberry Pi Microcontrollers: Data partition download"),
+    0xE48BFF59: ("RP2350_ARM_S", "Raspberry Pi RP2350, Secure Arm image"),
+    0xE48BFF5A: ("RP2350_RISCV", "Raspberry Pi RP2350, RISC-V image"),
+    0xE48BFF5B: ("RP2350_ARM_NS", "Raspberry Pi RP2350, Non-secure Arm image"),
+    0x00FF6919: ("STM32L4", "ST STM32L4xx"),
+    0x9AF03E33: ("GD32VF103", "GigaDevice GD32VF103"),
+    0x72721D4E: ("NRF52832xxAA", "Nordic NRF52832xxAA"),
+    0x6F752678: ("NRF52832xxAB", "Nordic NRF52832xxAB"),
+    0x699B62EC: ("CH32V", "WCH CH32V2xx and CH32V3xx"),
+    0x7BE8976D: ("RA4M1", "Renesas RA4M1"),
 }
+UF2_FAMILY_NAMES = {family_id: info[0] for family_id, info in UF2_FAMILY_INFO.items()}
+
+UF2_PICO_BOARD_TOKENS = {
+    "pico": "Raspberry Pi Pico",
+    "pico-w": "Raspberry Pi Pico W",
+    "pico2": "Raspberry Pi Pico 2",
+    "pico2-w": "Raspberry Pi Pico 2 W",
+}
+
+UF2_BOARD_ID_PATTERN = re.compile(rb"Board-ID:\s*([^\r\n]+)")
+UF2_MODEL_PATTERN = re.compile(rb"Model:\s*([^\r\n]+)")
+UF2_BOOTLOADER_PATTERN = re.compile(rb"UF2 Bootloader[^\r\n]*")
+UF2_PICO_BOARD_PATTERN = re.compile(rb"(?:PICO_BOARD|pico_board)\s*[:=]\s*([A-Za-z0-9_.-]+)")
 
 
 def _report_timestamp():
@@ -81,6 +156,238 @@ def _as_hex_family(family_id):
     if name:
         return f"0x{family_id:08X} ({name})"
     return f"0x{family_id:08X}"
+
+
+def _decode_utf8(value):
+    try:
+        return value.decode("utf-8", errors="ignore").strip("\x00 ").strip()
+    except Exception:
+        return ""
+
+
+def _align4(value):
+    return (value + 3) & ~0x3
+
+
+def _decode_extension_tag(tag_type, raw_value):
+    if tag_type in {UF2_EXTENSION_TAG_FIRMWARE_VERSION, UF2_EXTENSION_TAG_DEVICE_DESCRIPTION}:
+        return _decode_utf8(raw_value)
+    if tag_type == UF2_EXTENSION_TAG_PAGE_SIZE and len(raw_value) >= 4:
+        return struct.unpack_from("<I", raw_value, 0)[0]
+    if tag_type == UF2_EXTENSION_TAG_DEVICE_TYPE:
+        if len(raw_value) >= 8:
+            return f"0x{struct.unpack_from('<Q', raw_value[:8], 0)[0]:016X}"
+        if len(raw_value) >= 4:
+            return f"0x{struct.unpack_from('<I', raw_value[:4], 0)[0]:08X}"
+    if tag_type == UF2_EXTENSION_TAG_SHA2:
+        return raw_value.hex()
+    return raw_value.hex()
+
+
+def _parse_extension_tags(block, payload_size):
+    tags = []
+    offset = 32 + _align4(payload_size)
+    end = 32 + 476
+    while offset + 4 <= end:
+        size = block[offset]
+        tag_type = block[offset + 1] | (block[offset + 2] << 8) | (block[offset + 3] << 16)
+        if size == 0 and tag_type == 0:
+            break
+        if size < 4 or offset + size > end:
+            break
+        raw_value = bytes(block[offset + 4 : offset + size])
+        tags.append(
+            {
+                "type": tag_type,
+                "size": size,
+                "raw": raw_value.hex(),
+                "value": _decode_extension_tag(tag_type, raw_value),
+            }
+        )
+        offset += _align4(size)
+    return tags
+
+
+def _parse_file_container_name(block, payload_size):
+    name_start = 32 + payload_size
+    if name_start >= 32 + 476:
+        return None
+    try:
+        raw = bytes(block[name_start : 32 + 476]).split(b"\x00", 1)[0]
+    except Exception:
+        return None
+    name = _decode_utf8(raw)
+    return name or None
+
+
+def _extract_text_hints(blob):
+    hints = {
+        "board_ids": [],
+        "models": [],
+        "bootloader_lines": [],
+        "pico_boards": [],
+    }
+    for pattern, key in (
+        (UF2_BOARD_ID_PATTERN, "board_ids"),
+        (UF2_MODEL_PATTERN, "models"),
+        (UF2_BOOTLOADER_PATTERN, "bootloader_lines"),
+        (UF2_PICO_BOARD_PATTERN, "pico_boards"),
+    ):
+        matches = []
+        for match in pattern.findall(blob):
+            if isinstance(match, tuple):
+                match = match[0]
+            decoded = _decode_utf8(match if isinstance(match, (bytes, bytearray)) else str(match).encode())
+            if decoded:
+                matches.append(decoded)
+        hints[key] = sorted(set(matches))
+    return hints
+
+
+def _derive_board_hint(text_hints):
+    models = text_hints.get("models") or []
+    if models:
+        return models[0]
+
+    for value in (text_hints.get("board_ids") or []) + (text_hints.get("pico_boards") or []):
+        normalized = value.lower()
+        for token, label in UF2_PICO_BOARD_TOKENS.items():
+            if token in normalized:
+                return label
+
+    board_ids = text_hints.get("board_ids") or []
+    if board_ids:
+        return board_ids[0]
+    return "Unknown"
+
+
+def _family_profile(family_id):
+    info = UF2_FAMILY_INFO.get(family_id)
+    if not info:
+        return None
+
+    short_name, description = info
+    profile = {
+        "short_name": short_name,
+        "description": description,
+        "target": description,
+        "vendor": "Unknown",
+        "arch": "Unknown",
+    }
+
+    if short_name.startswith("RP2040"):
+        profile.update(
+            {
+                "target": "RP2040 (ARM Cortex-M0+)",
+                "vendor": "Raspberry Pi",
+                "arch": "ARM Cortex-M0+",
+            }
+        )
+    elif short_name.startswith("RP2350_ARM_S"):
+        profile.update(
+            {
+                "target": "RP2350 Secure Arm image",
+                "vendor": "Raspberry Pi",
+                "arch": "ARM Cortex-M33",
+            }
+        )
+    elif short_name.startswith("RP2350_ARM_NS"):
+        profile.update(
+            {
+                "target": "RP2350 Non-secure Arm image",
+                "vendor": "Raspberry Pi",
+                "arch": "ARM Cortex-M33",
+            }
+        )
+    elif short_name.startswith("RP2350_RISCV"):
+        profile.update(
+            {
+                "target": "RP2350 RISC-V image",
+                "vendor": "Raspberry Pi",
+                "arch": "RISC-V",
+            }
+        )
+    elif short_name.startswith("RP2XXX_"):
+        profile.update(
+            {
+                "target": description,
+                "vendor": "Raspberry Pi",
+                "arch": "Unknown",
+            }
+        )
+    elif short_name in {"SAMD21", "SAML21"}:
+        profile.update(
+            {
+                "target": f"{short_name} (ARM Cortex-M0+)",
+                "vendor": "Microchip",
+                "arch": "ARM Cortex-M0+",
+            }
+        )
+    elif short_name == "SAMD51":
+        profile.update(
+            {
+                "target": "SAMD51 (ARM Cortex-M4F)",
+                "vendor": "Microchip",
+                "arch": "ARM Cortex-M4F",
+            }
+        )
+    elif short_name.startswith("NRF"):
+        profile.update(
+            {
+                "target": description,
+                "vendor": "Nordic",
+                "arch": "ARM Cortex-M",
+            }
+        )
+    elif short_name.startswith("ESP32") or short_name == "ESP8266":
+        profile.update(
+            {
+                "target": description,
+                "vendor": "Espressif",
+                "arch": "Xtensa / RISC-V",
+            }
+        )
+    elif short_name.startswith("STM32"):
+        profile.update(
+            {
+                "target": description,
+                "vendor": "STMicroelectronics",
+                "arch": "ARM Cortex-M",
+            }
+        )
+    elif short_name == "ATMEGA32":
+        profile.update(
+            {
+                "target": "ATmega32 (AVR)",
+                "vendor": "Microchip",
+                "arch": "AVR",
+            }
+        )
+    elif short_name in {"LPC55", "KL32L2", "MIMXRT10XX"}:
+        profile.update(
+            {
+                "target": description,
+                "vendor": "NXP",
+                "arch": "ARM Cortex-M",
+            }
+        )
+    elif short_name == "RA4M1":
+        profile.update(
+            {
+                "target": "Renesas RA4M1 (ARM Cortex-M4)",
+                "vendor": "Renesas",
+                "arch": "ARM Cortex-M4",
+            }
+        )
+    elif short_name in {"GD32VF103", "CH32V"}:
+        profile.update(
+            {
+                "target": description,
+                "vendor": "GigaDevice / WCH",
+                "arch": "RISC-V",
+            }
+        )
+    return profile
 
 
 def is_uf2_file(path):
@@ -106,6 +413,24 @@ def _parse_uf2_blocks(path):
     blocks = []
     family_ids = set()
     declared_counts = set()
+    context = {
+        "flag_counts": {
+            "not_main_flash": 0,
+            "file_container": 0,
+            "family_id_present": 0,
+            "md5_present": 0,
+            "extension_tags_present": 0,
+        },
+        "file_names": set(),
+        "extension_tags": {
+            "firmware_versions": set(),
+            "device_descriptions": set(),
+            "page_sizes": set(),
+            "sha2_checksums": set(),
+            "device_type_ids": set(),
+        },
+        "md5_regions": set(),
+    }
 
     for offset in range(0, len(data), UF2_BLOCK_SIZE):
         block = data[offset : offset + UF2_BLOCK_SIZE]
@@ -133,9 +458,42 @@ def _parse_uf2_blocks(path):
 
         payload = block[32 : 32 + payload_size]
         family_id = None
+        if flags & UF2_FLAG_NOT_MAIN_FLASH:
+            context["flag_counts"]["not_main_flash"] += 1
+        if flags & UF2_FLAG_FILE_CONTAINER:
+            context["flag_counts"]["file_container"] += 1
+        if flags & UF2_FLAG_FAMILY_ID_PRESENT:
+            context["flag_counts"]["family_id_present"] += 1
         if flags & UF2_FLAG_FAMILY_ID_PRESENT:
             family_id = file_size_or_family
             family_ids.add(family_id)
+        if flags & UF2_FLAG_MD5_PRESENT:
+            context["flag_counts"]["md5_present"] += 1
+            start, length = struct.unpack_from("<II", block, 32 + 476 - 24)
+            context["md5_regions"].add((start, length))
+        extension_tags = []
+        if flags & UF2_FLAG_EXTENSION_TAGS_PRESENT:
+            context["flag_counts"]["extension_tags_present"] += 1
+            extension_tags = _parse_extension_tags(block, payload_size)
+            for tag in extension_tags:
+                tag_type = tag["type"]
+                value = tag["value"]
+                if tag_type == UF2_EXTENSION_TAG_FIRMWARE_VERSION and value:
+                    context["extension_tags"]["firmware_versions"].add(str(value))
+                elif tag_type == UF2_EXTENSION_TAG_DEVICE_DESCRIPTION and value:
+                    context["extension_tags"]["device_descriptions"].add(str(value))
+                elif tag_type == UF2_EXTENSION_TAG_PAGE_SIZE and value:
+                    context["extension_tags"]["page_sizes"].add(int(value))
+                elif tag_type == UF2_EXTENSION_TAG_SHA2 and value:
+                    context["extension_tags"]["sha2_checksums"].add(str(value))
+                elif tag_type == UF2_EXTENSION_TAG_DEVICE_TYPE and value:
+                    context["extension_tags"]["device_type_ids"].add(str(value))
+
+        file_name = None
+        if flags & UF2_FLAG_FILE_CONTAINER:
+            file_name = _parse_file_container_name(block, payload_size)
+            if file_name:
+                context["file_names"].add(file_name)
 
         if num_blocks:
             declared_counts.add(num_blocks)
@@ -149,10 +507,24 @@ def _parse_uf2_blocks(path):
                 "num_blocks": num_blocks,
                 "family_id": family_id,
                 "payload": payload,
+                "file_name": file_name,
+                "extension_tags": extension_tags,
             }
         )
 
-    return blocks, family_ids, declared_counts
+    context["file_names"] = sorted(context["file_names"])
+    context["md5_regions"] = [
+        {"start": start, "length": length}
+        for start, length in sorted(context["md5_regions"])
+    ]
+    for key in context["extension_tags"]:
+        values = context["extension_tags"][key]
+        if key == "page_sizes":
+            context["extension_tags"][key] = sorted(values)
+        else:
+            context["extension_tags"][key] = sorted(values)
+
+    return blocks, family_ids, declared_counts, context
 
 
 def _marker_hits(blob, markers):
@@ -166,7 +538,7 @@ def _token_hits(blob, pattern):
         return 0
 
 
-def _detect_artifact_profile(blob, family_ids):
+def _detect_artifact_profile(blob, family_ids, uf2_context=None, text_hints=None):
     scores = empty_scores(ARTIFACT_HEURISTICS)
     profile = {
         "indicators": [],
@@ -181,6 +553,8 @@ def _detect_artifact_profile(blob, family_ids):
         "elf_type": "UF2",
         "loader": "None",
     }
+    uf2_context = uf2_context or {}
+    text_hints = text_hints or {}
 
     scores["Bare-metal Firmware"] += 30
     profile["indicators"].append("UF2 container format detected")
@@ -221,13 +595,62 @@ def _detect_artifact_profile(blob, family_ids):
         profile["runtime_hints"].append("glibc")
         scores["Linux User-space Executable"] += 4
 
+    family_labels = []
     for family_id in sorted(family_ids):
-        if family_id == 0xE48BFF56:
-            profile["target_hints"].append("RP2040 (ARM Cortex-M0+)")
-            profile["sdk_hints"].append("Pico SDK (likely)")
-            profile["build_hints"].append("CMake (likely)")
-            scores["Bare-metal Firmware"] += 10
-            profile["indicators"].append("UF2 family id indicates RP2040")
+        family_profile = _family_profile(family_id)
+        if family_profile:
+            family_labels.append(family_profile["description"])
+            profile["target_hints"].append(family_profile["target"])
+            profile["uf2_vendor"] = family_profile["vendor"]
+            profile["uf2_arch"] = family_profile["arch"]
+            profile["indicators"].append(f"UF2 family id indicates {family_profile['description']}")
+            scores["Bare-metal Firmware"] += 8
+            if family_profile["short_name"].startswith("RP2040"):
+                profile["sdk_hints"].append("Pico SDK (likely)")
+                profile["build_hints"].append("CMake (likely)")
+                scores["Bare-metal Firmware"] += 4
+        else:
+            family_labels.append(f"0x{family_id:08X}")
+
+    board_hint = _derive_board_hint(text_hints)
+    if board_hint != "Unknown":
+        profile["board"] = board_hint
+        profile["indicators"].append(f"Board hint extracted: {board_hint}")
+        scores["Bare-metal Firmware"] += 3
+
+    if text_hints.get("bootloader_lines"):
+        profile["indicators"].append("Embedded UF2 bootloader info text detected")
+    if text_hints.get("pico_boards"):
+        profile["sdk_hints"].append("Pico SDK (likely)")
+        profile["build_hints"].append("CMake (likely)")
+        scores["Bare-metal Firmware"] += 3
+
+    extension_tags = uf2_context.get("extension_tags", {})
+    if extension_tags.get("firmware_versions"):
+        profile["firmware_versions"] = list(extension_tags["firmware_versions"])
+        profile["indicators"].append("UF2 extension tag: firmware version")
+    if extension_tags.get("device_descriptions"):
+        profile["device_description"] = extension_tags["device_descriptions"][0]
+        profile["indicators"].append("UF2 extension tag: device description")
+    if extension_tags.get("page_sizes"):
+        profile["page_size"] = extension_tags["page_sizes"][0]
+        profile["indicators"].append("UF2 extension tag: page size")
+    if extension_tags.get("device_type_ids"):
+        profile["device_type"] = extension_tags["device_type_ids"][0]
+        profile["indicators"].append("UF2 extension tag: device type")
+
+    if uf2_context.get("flag_counts", {}).get("file_container"):
+        profile["uf2_payload_mode"] = "File container"
+        profile["indicators"].append("UF2 file-container blocks detected")
+    else:
+        profile["uf2_payload_mode"] = "Flash image"
+
+    if uf2_context.get("flag_counts", {}).get("not_main_flash"):
+        profile["indicators"].append("UF2 not-main-flash blocks present")
+    if uf2_context.get("flag_counts", {}).get("md5_present"):
+        profile["indicators"].append("UF2 MD5 region tags present")
+    if family_labels:
+        profile["family"] = ", ".join(sorted(set(family_labels)))
 
     artifact_type = max(scores, key=scores.get)
     ordered_scores = sorted(scores.values(), reverse=True)
@@ -490,6 +913,13 @@ def _detect_build_system(blob, artifact_profile):
         scores["CMake"] += 2
     if "RP2040" in artifact_profile.get("target", ""):
         scores["Pico SDK"] += 2
+    if "Arduino" in artifact_profile.get("board", "") or "Arduino" in artifact_profile.get(
+        "device_description", ""
+    ):
+        scores["Arduino"] += 8
+    if "Raspberry Pi Pico" in artifact_profile.get("board", ""):
+        scores["Pico SDK"] += 4
+        scores["CMake"] += 2
 
     max_score = max(scores.values())
     top = [system for system, score in scores.items() if score == max_score and score > 0]
@@ -500,7 +930,7 @@ def _detect_build_system(blob, artifact_profile):
     return "Ambiguous: " + "/".join(top), scores
 
 
-def _render_uf2_metadata(blocks, family_ids, declared_counts):
+def _render_uf2_metadata(blocks, family_ids, declared_counts, context, text_hints, artifact_profile):
     total_payload = sum(block["payload_size"] for block in blocks)
     min_addr = min((block["target_addr"] for block in blocks), default=None)
     max_addr = max(
@@ -524,20 +954,82 @@ def _render_uf2_metadata(blocks, family_ids, declared_counts):
         lines.append(f"Family IDs: {families}")
     else:
         lines.append("Family IDs: None")
+    flag_counts = context.get("flag_counts", {})
+    lines.append(
+        "Flags: "
+        f"not_main_flash={flag_counts.get('not_main_flash', 0)}, "
+        f"file_container={flag_counts.get('file_container', 0)}, "
+        f"family_id={flag_counts.get('family_id_present', 0)}, "
+        f"md5={flag_counts.get('md5_present', 0)}, "
+        f"extension_tags={flag_counts.get('extension_tags_present', 0)}"
+    )
+    if context.get("file_names"):
+        lines.append("Container Files: " + ", ".join(context["file_names"][:8]))
+    extension_tags = context.get("extension_tags", {})
+    if extension_tags.get("firmware_versions"):
+        lines.append("Firmware Versions: " + ", ".join(extension_tags["firmware_versions"]))
+    if extension_tags.get("device_descriptions"):
+        lines.append("Device Descriptions: " + ", ".join(extension_tags["device_descriptions"]))
+    if extension_tags.get("page_sizes"):
+        lines.append(
+            "Page Sizes: " + ", ".join(f"{value} bytes" for value in extension_tags["page_sizes"])
+        )
+    if extension_tags.get("device_type_ids"):
+        lines.append("Device Type IDs: " + ", ".join(extension_tags["device_type_ids"]))
+    if text_hints.get("models"):
+        lines.append("Models: " + ", ".join(text_hints["models"]))
+    if text_hints.get("board_ids"):
+        lines.append("Board IDs: " + ", ".join(text_hints["board_ids"]))
+    if artifact_profile.get("board") and artifact_profile.get("board") != "Unknown":
+        lines.append(f"Detected Board: {artifact_profile['board']}")
     return "\n".join(lines)
+
+
+def _build_uf2_firmware_fingerprint(artifact_profile, context):
+    target = artifact_profile.get("target", "Unknown")
+    vendor = artifact_profile.get("uf2_vendor", "Unknown")
+    sdk = artifact_profile.get("sdk", "Unknown")
+    board = artifact_profile.get("board", "Unknown")
+    family = artifact_profile.get("family", "Unknown")
+    signals = list(artifact_profile.get("indicators", []))
+    if family != "Unknown":
+        signals.append(f"UF2 family match: {family}")
+    extension_tags = context.get("extension_tags", {})
+    if extension_tags.get("device_descriptions"):
+        signals.append("Device description available via UF2 extension tag")
+    if context.get("flag_counts", {}).get("file_container"):
+        signals.append("UF2 file-container mode present")
+    return {
+        "is_firmware_candidate": artifact_profile.get("artifact_type") == "Bare-metal Firmware",
+        "firmware_confidence": artifact_profile.get("confidence", 0),
+        "likely_mcu": target,
+        "likely_vendor": vendor,
+        "sdk_candidates": [] if sdk in {"Unknown", ""} else [sdk],
+        "rtos_candidates": []
+        if artifact_profile.get("rtos", "None detected") in {"Unknown", "None detected", ""}
+        else [artifact_profile.get("rtos")],
+        "board_candidates": [] if board in {"Unknown", ""} else [board],
+        "signals": signals[:20],
+    }
 
 
 def scan_uf2_file(filepath, mode="general"):
     input_path = Path(filepath).expanduser()
     resolved_path = str(input_path.resolve()) if input_path.exists() else str(input_path)
 
-    blocks, family_ids, declared_counts = _parse_uf2_blocks(input_path)
-    payload_blob = b"\x00".join(
-        block["payload"].lower()
-        for block in sorted(blocks, key=lambda block: (block["block_no"], block["target_addr"]))
+    blocks, family_ids, declared_counts, context = _parse_uf2_blocks(input_path)
+    payload_blob_raw = b"\x00".join(
+        block["payload"] for block in sorted(blocks, key=lambda block: (block["block_no"], block["target_addr"]))
     )
+    payload_blob = payload_blob_raw.lower()
+    text_hints = _extract_text_hints(payload_blob_raw)
 
-    artifact_profile = _detect_artifact_profile(payload_blob, family_ids)
+    artifact_profile = _detect_artifact_profile(
+        payload_blob,
+        family_ids,
+        uf2_context=context,
+        text_hints=text_hints,
+    )
     source_language, language_scores = _detect_language(payload_blob, artifact_profile)
     compiler, compiler_scores = _detect_compiler(payload_blob, source_language, artifact_profile)
     build_system, build_scores = _detect_build_system(payload_blob, artifact_profile)
@@ -550,9 +1042,19 @@ def scan_uf2_file(filepath, mode="general"):
         "compiler_scores": compiler_scores,
         "build_system": build_system,
         "build_scores": build_scores,
+        "firmware_fingerprint": _build_uf2_firmware_fingerprint(artifact_profile, context),
+        "uf2_context": context,
     }
+    scan_result["explanations"] = build_scan_explanations(scan_result)
 
-    metadata_text = _render_uf2_metadata(blocks, family_ids, declared_counts)
+    metadata_text = _render_uf2_metadata(
+        blocks,
+        family_ids,
+        declared_counts,
+        context,
+        text_hints,
+        artifact_profile,
+    )
     return {
         "file": resolved_path,
         "mode": mode,

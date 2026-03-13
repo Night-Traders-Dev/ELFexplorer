@@ -76,6 +76,9 @@ class WebDashboardTests(unittest.TestCase):
         self.assertIn("Scan File", html)
         self.assertIn("Crawl Directory", html)
         self.assertIn("Load Saved JSON", html)
+        self.assertIn("Compare / Diff", html)
+        self.assertIn("Integrations", html)
+        self.assertIn("Save Report JSON", html)
 
     @unittest.skipUnless(shutil.which("node"), "node is required to syntax-check generated dashboard JavaScript")
     def test_dashboard_html_embedded_script_parses_in_node(self):
@@ -96,6 +99,17 @@ class WebDashboardTests(unittest.TestCase):
         callbacks = {
             "scan": lambda path, mode: _sample_report(path=path),
             "export_report_md": lambda report, path: Path(path),
+            "save_scan": lambda report, path=None: Path(path or "/tmp/web-scan.json"),
+            "save_collection": lambda reports, path=None: Path(path or "/tmp/web-collection.json"),
+            "export_collection_md": lambda payload, path: Path(path),
+            "list_tool_plugins": lambda: {"ghidra": {"label": "Ghidra", "extension": ".py"}},
+            "default_tool_plugin_path": lambda report, fmt: Path(f"/tmp/{fmt}-export.txt"),
+            "export_tool_plugin": lambda report, path, fmt: Path(path),
+            "tooling_snapshot": lambda: {
+                "environment": {"os_label": "Linux"},
+                "tools": [{"key": "radare2", "label": "radare2", "installed": True, "path": "/usr/bin/radare2"}],
+            },
+            "tooling_detail": lambda tool_key: {"key": tool_key, "installed": True, "path": "/usr/bin/radare2"},
             "list_saved": lambda: [],
         }
         server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[], port=0)
@@ -121,6 +135,42 @@ class WebDashboardTests(unittest.TestCase):
             export_response = json.load(urllib.request.urlopen(export_request))
             self.assertTrue(export_response["ok"])
             self.assertTrue(export_response["path"].endswith(".md"))
+
+            save_request = urllib.request.Request(
+                f"{url}/api/save/report",
+                data=json.dumps({"index": 0}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            save_response = json.load(urllib.request.urlopen(save_request))
+            self.assertTrue(save_response["ok"])
+            self.assertTrue(save_response["path"].endswith(".json"))
+
+            plugin_request = urllib.request.Request(
+                f"{url}/api/tool-plugin/export",
+                data=json.dumps({"index": 0, "format": "ghidra"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            plugin_response = json.load(urllib.request.urlopen(plugin_request))
+            self.assertTrue(plugin_response["ok"])
+            self.assertIn("ghidra-export", plugin_response["path"])
+
+            diff_request = urllib.request.Request(
+                f"{url}/api/diff",
+                data=json.dumps({"index": 0, "path": "/tmp/right.elf", "mode": "general"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            diff_response = json.load(urllib.request.urlopen(diff_request))
+            self.assertTrue(diff_response["ok"])
+            self.assertEqual(diff_response["diff"]["right_file"], "/tmp/right.elf")
+
+            tooling_snapshot = json.load(urllib.request.urlopen(f"{url}/api/tooling/status"))
+            self.assertEqual(tooling_snapshot["tools"][0]["key"], "radare2")
+
+            tooling_detail = json.load(urllib.request.urlopen(f"{url}/api/tooling/radare2/detail"))
+            self.assertEqual(tooling_detail["key"], "radare2")
         finally:
             server.shutdown()
             server.server_close()

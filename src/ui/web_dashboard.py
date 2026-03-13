@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from advanced.diffing import compare_reports, diff_to_markdown
 from version import get_version
 
 
@@ -67,10 +68,18 @@ class DashboardRuntime:
         self.callbacks = callbacks or {}
         self.reports = list(initial_reports or [])
         self.message = "Dashboard ready."
+        self.active_diff = None
 
     def _callback(self, name):
         value = self.callbacks.get(name)
         return value if callable(value) else None
+
+    def _collection_payload(self):
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(self.reports),
+            "reports": list(self.reports),
+        }
 
     def capabilities(self):
         return {
@@ -81,6 +90,14 @@ class DashboardRuntime:
             "list_saved": bool(self._callback("list_saved")),
             "export_md": bool(self._callback("export_report_md")),
             "export_pdf": bool(self._callback("export_report_pdf")),
+            "save_scan": bool(self._callback("save_scan")),
+            "save_collection": bool(self._callback("save_collection")),
+            "export_collection_md": bool(self._callback("export_collection_md")),
+            "export_collection_pdf": bool(self._callback("export_collection_pdf")),
+            "tool_plugins": bool(self._callback("list_tool_plugins"))
+            and bool(self._callback("export_tool_plugin")),
+            "tooling": bool(self._callback("tooling_snapshot")),
+            "diff": bool(self._callback("scan")),
         }
 
     def _list_saved(self):
@@ -104,11 +121,14 @@ class DashboardRuntime:
             "saved_reports": self._list_saved(),
             "capabilities": self.capabilities(),
             "web_themes": WEB_THEME_OPTIONS,
+            "tool_plugin_formats": self._tool_plugin_formats(),
+            "active_diff": self.active_diff,
         }
 
     def replace_reports(self, reports, message):
         self.reports = list(reports)
         self.message = message
+        self.active_diff = None
         return self.state()
 
     def scan(self, path, mode):
@@ -140,6 +160,23 @@ class DashboardRuntime:
         reports = payload.get("reports", [])
         return self.replace_reports(reports, f"Loaded collection {path} with {len(reports)} report(s).")
 
+    def save_report(self, index, path=None):
+        callback = self._callback("save_scan")
+        if not callback:
+            raise RuntimeError("Save-scan action is unavailable in this dashboard context.")
+        report = self.get_report(index)
+        saved = callback(report, path=path)
+        self.message = f"Saved report JSON: {saved}"
+        return {"ok": True, "path": str(saved), "message": self.message}
+
+    def save_collection(self, path=None):
+        callback = self._callback("save_collection")
+        if not callback:
+            raise RuntimeError("Save-collection action is unavailable in this dashboard context.")
+        saved = callback(self.reports, path=path)
+        self.message = f"Saved collection JSON: {saved}"
+        return {"ok": True, "path": str(saved), "message": self.message}
+
     def export_report(self, index, export_format, path=None):
         report = self.get_report(index)
         if export_format == "markdown":
@@ -156,6 +193,68 @@ class DashboardRuntime:
         exported = callback(report, target)
         self.message = f"Exported {export_format.upper()} report: {exported}"
         return {"ok": True, "path": str(exported), "message": self.message}
+
+    def export_collection(self, export_format, path):
+        payload = self._collection_payload()
+        if export_format == "markdown":
+            callback = self._callback("export_collection_md")
+        elif export_format == "pdf":
+            callback = self._callback("export_collection_pdf")
+        else:
+            raise RuntimeError(f"Unsupported collection export format '{export_format}'.")
+        if not callback:
+            raise RuntimeError(
+                f"Collection export action '{export_format}' is unavailable in this dashboard context."
+            )
+        exported = callback(payload, Path(path).expanduser())
+        self.message = f"Exported collection {export_format.upper()}: {exported}"
+        return {"ok": True, "path": str(exported), "message": self.message}
+
+    def _tool_plugin_formats(self):
+        callback = self._callback("list_tool_plugins")
+        return callback() if callback else {}
+
+    def export_tool_plugin(self, index, tool_format, path=None):
+        report = self.get_report(index)
+        default_path_callback = self._callback("default_tool_plugin_path")
+        export_callback = self._callback("export_tool_plugin")
+        if not export_callback:
+            raise RuntimeError("Tool-plugin export is unavailable in this dashboard context.")
+        target = Path(path).expanduser() if path else default_path_callback(report, tool_format)
+        exported = export_callback(report, target, tool_format)
+        self.message = f"Exported {tool_format} integration artifact: {exported}"
+        return {"ok": True, "path": str(exported), "message": self.message}
+
+    def tooling_status(self):
+        callback = self._callback("tooling_snapshot")
+        if not callback:
+            raise RuntimeError("Tooling status is unavailable in this dashboard context.")
+        return callback()
+
+    def tooling_detail(self, tool_key):
+        callback = self._callback("tooling_detail")
+        if not callback:
+            raise RuntimeError("Tooling detail is unavailable in this dashboard context.")
+        return callback(tool_key)
+
+    def compare_with(self, index, other_path, mode="general"):
+        report = self.get_report(index)
+        scan_callback = self._callback("scan")
+        if not scan_callback:
+            raise RuntimeError("Diff action is unavailable in this dashboard context.")
+        other_report = scan_callback(other_path, mode)
+        self.active_diff = compare_reports(report, other_report)
+        self.message = f"Compared {report.get('file')} against {other_path}."
+        return {"ok": True, "diff": self.active_diff, "message": self.message}
+
+    def export_diff_markdown(self, path):
+        if not self.active_diff:
+            raise RuntimeError("No active diff is available to export.")
+        target = Path(path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(diff_to_markdown(self.active_diff), encoding="utf-8")
+        self.message = f"Exported diff Markdown: {target}"
+        return {"ok": True, "path": str(target), "message": self.message}
 
     def get_report(self, index):
         if index is None:
@@ -219,7 +318,7 @@ def build_dashboard_html(initial_state):
       --muted: #b6b9c3;
       --border: rgba(255,255,255,0.08);
       --success: #5bd09d;
-      --shadow: 0 24px 80px rgba(0,0,0,0.28);
+      --shadow: 0 14px 36px rgba(0,0,0,0.24);
       --radius: 18px;
     }}
     [data-theme="oceanic"] {{
@@ -256,7 +355,9 @@ def build_dashboard_html(initial_state):
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       overflow: hidden;
+      contain: layout paint style;
     }}
+    .render-card {{ content-visibility: auto; }}
     .hero {{ padding: 24px; position: relative; }}
     .hero::after {{
       content: "";
@@ -311,6 +412,7 @@ def build_dashboard_html(initial_state):
     .section h2, .section h3 {{ margin: 0 0 12px; font-family: "Space Grotesk", "Avenir Next", sans-serif; }}
     .section h2 {{ font-size: 1rem; letter-spacing: 0.03em; }}
     .form-grid {{ display: grid; gap: 10px; }}
+    .inline-grid {{ display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }}
     .muted {{ color: var(--muted); }}
     .status-bar {{
       display: flex;
@@ -327,7 +429,7 @@ def build_dashboard_html(initial_state):
     .pill {{ padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--panel) 84%, #fff 3%); border: 1px solid var(--border); min-height: 116px; }}
     .pill strong {{ display: block; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 12px; }}
     .pill span {{ display: block; font-size: 1.15rem; line-height: 1.4; }}
-    .report-list {{ display: grid; gap: 10px; max-height: 340px; overflow: auto; }}
+    .report-list {{ display: grid; gap: 10px; max-height: 340px; overflow: auto; overscroll-behavior: contain; }}
     .report-item {{ padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 90%, #fff 2%); cursor: pointer; }}
     .report-item.active {{ border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent); }}
     .report-item .top {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 0.88rem; color: var(--muted); }}
@@ -345,17 +447,20 @@ def build_dashboard_html(initial_state):
     th, td {{ padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }}
     th {{ color: var(--muted); font-size: 0.84rem; text-transform: uppercase; letter-spacing: 0.06em; background: color-mix(in srgb, var(--panel) 88%, #fff 3%); }}
     tr:last-child td {{ border-bottom: none; }}
-    pre {{ margin: 0; padding: 16px; border-radius: 16px; overflow: auto; background: color-mix(in srgb, var(--bg) 82%, #000); border: 1px solid var(--border); color: var(--text); font: 0.88rem/1.6 "Iosevka Term", "JetBrains Mono", monospace; }}
+    pre {{ margin: 0; padding: 16px; border-radius: 16px; overflow: auto; overscroll-behavior: contain; background: color-mix(in srgb, var(--bg) 82%, #000); border: 1px solid var(--border); color: var(--text); font: 0.88rem/1.6 "Iosevka Term", "JetBrains Mono", monospace; }}
     .split-grid {{ display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }}
-    .saved-list {{ display: grid; gap: 8px; max-height: 220px; overflow: auto; }}
+    .saved-list {{ display: grid; gap: 8px; max-height: 220px; overflow: auto; overscroll-behavior: contain; }}
     .saved-item {{ padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 90%, #fff 2%); font-size: 0.9rem; word-break: break-word; cursor: pointer; }}
     .empty {{ padding: 28px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 18px; background: color-mix(in srgb, var(--panel) 64%, transparent); }}
     .actions {{ display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }}
-    .sticky-top {{ position: sticky; top: 0; z-index: 5; backdrop-filter: blur(18px); }}
+    .info-list {{ display: grid; gap: 10px; }}
+    .info-row {{ padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border); background: color-mix(in srgb, var(--panel) 84%, #fff 3%); }}
+    .toolbar-row {{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }}
+    .sticky-top {{ position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--panel) 94%, #000 4%); }}
     .hidden {{ display: none !important; }}
     @media (max-width: 1180px) {{
       .shell {{ grid-template-columns: 1fr; }}
-      .pill-grid, .details-grid, .split-grid {{ grid-template-columns: 1fr; }}
+      .pill-grid, .details-grid, .split-grid, .inline-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -415,6 +520,20 @@ def build_dashboard_html(initial_state):
           <div id="saved-list" class="saved-list"></div>
         </div>
       </section>
+
+      <section class="card section">
+        <h2>Compare / Diff</h2>
+        <form id="compare-form" class="form-grid">
+          <input id="compare-path" placeholder="/path/to/other/binary" required>
+          <select id="compare-mode">
+            <option value="general">general</option>
+            <option value="important">important</option>
+            <option value="detailed">detailed</option>
+          </select>
+          <button id="compare-submit" class="ghost" type="submit">Compare With Active Report</button>
+          <button id="export-diff" class="ghost" type="button">Export Diff Markdown</button>
+        </form>
+      </section>
     </aside>
 
     <main class="main">
@@ -425,31 +544,49 @@ def build_dashboard_html(initial_state):
         </div>
       </section>
 
-      <section class="card section">
+      <section class="card section render-card">
         <div class="actions">
           <button id="download-json">Download JSON</button>
+          <button id="save-report">Save Report JSON</button>
+          <button id="save-collection">Save Collection JSON</button>
           <button id="export-markdown">Export Markdown</button>
           <button id="export-pdf">Export PDF</button>
+          <button id="export-collection-markdown">Export Collection MD</button>
+          <button id="export-collection-pdf">Export Collection PDF</button>
+          <select id="plugin-format" style="max-width:240px;"></select>
+          <button id="export-plugin">Export Tool Plugin</button>
         </div>
         <div id="metric-grid" class="pill-grid"></div>
       </section>
 
-      <section class="card section">
+      <section class="card section render-card">
         <h2>Reports</h2>
         <div id="report-list" class="report-list"></div>
       </section>
 
-      <section class="card section">
+      <section class="card section render-card">
         <div class="tabs">
           <button class="tab active" data-tab="overview">Overview</button>
           <button class="tab" data-tab="scores">Scores</button>
           <button class="tab" data-tab="evidence">Evidence</button>
+          <button class="tab" data-tab="explain">Explain</button>
+          <button class="tab" data-tab="hardening">Hardening</button>
+          <button class="tab" data-tab="firmware">Firmware</button>
+          <button class="tab" data-tab="plugins">Plugins</button>
+          <button class="tab" data-tab="diff">Diff</button>
+          <button class="tab" data-tab="integrations">Integrations</button>
           <button class="tab" data-tab="metadata">Metadata</button>
           <button class="tab" data-tab="json">JSON</button>
         </div>
         <div id="panel-overview" class="panel active"></div>
         <div id="panel-scores" class="panel"></div>
         <div id="panel-evidence" class="panel"></div>
+        <div id="panel-explain" class="panel"></div>
+        <div id="panel-hardening" class="panel"></div>
+        <div id="panel-firmware" class="panel"></div>
+        <div id="panel-plugins" class="panel"></div>
+        <div id="panel-diff" class="panel"></div>
+        <div id="panel-integrations" class="panel"></div>
         <div id="panel-metadata" class="panel"></div>
         <div id="panel-json" class="panel"></div>
       </section>
@@ -461,8 +598,21 @@ def build_dashboard_html(initial_state):
     const initialState = JSON.parse(document.getElementById('initial-state').textContent);
     let appState = initialState;
     let selectedIndex = initialState.selected_index;
+    let activeTab = 'overview';
+    let toolingSnapshot = null;
+    let activeToolKey = null;
+    let renderFrame = null;
     const themeSelect = document.getElementById('theme-select');
     const themeKey = 'elfexplorer.web.theme';
+
+    function escapeHtml(value) {{
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }}
 
     function humanFile(value) {{
       if (!value) return 'Unknown';
@@ -477,6 +627,10 @@ def build_dashboard_html(initial_state):
 
     function metric(label, value) {{
       return `<div class="pill"><strong>${{label}}</strong><span>${{value}}</span></div>`;
+    }}
+
+    function codeBlock(value) {{
+      return `<pre>${{escapeHtml(value || 'No data available.')}}</pre>`;
     }}
 
     function setStatus(message) {{
@@ -512,6 +666,20 @@ def build_dashboard_html(initial_state):
       document.body.dataset.theme = themeSelect.value;
     }}
 
+    function renderPluginFormats() {{
+      const formats = appState.tool_plugin_formats || {{}};
+      const select = document.getElementById('plugin-format');
+      const currentValue = select.value;
+      select.innerHTML = Object.entries(formats)
+        .map(([key, meta]) => `<option value="${{key}}">${{escapeHtml(meta.label || key)}}</option>`)
+        .join('');
+      if (formats[currentValue]) {{
+        select.value = currentValue;
+      }} else if (Object.keys(formats).length) {{
+        select.value = Object.keys(formats)[0];
+      }}
+    }}
+
     function renderMetrics() {{
       const report = activeReport();
       if (!report) {{
@@ -529,7 +697,11 @@ def build_dashboard_html(initial_state):
         metric('Active File', humanFile(report.file)),
         metric('Language', scan.source_language || 'Unknown'),
         metric('Compiler', scan.compiler || 'Unknown'),
-        metric('Artifact', artifact.artifact_type || 'Unknown')
+        metric('Artifact', artifact.artifact_type || 'Unknown'),
+        metric('Board / Target', artifact.board || artifact.target || 'Unknown'),
+        metric('SDK / Build', `${{artifact.sdk || 'Unknown'}} / ${{scan.build_system || 'Unknown'}}`),
+        metric('Family', artifact.family || 'Unknown'),
+        metric('Confidence', artifact.confidence ?? 0),
       ].join('');
     }}
 
@@ -551,12 +723,6 @@ def build_dashboard_html(initial_state):
           </div>
         </div>
       `).join('');
-      container.querySelectorAll('.report-item').forEach((item) => {{
-        item.addEventListener('click', () => {{
-          selectedIndex = Number(item.dataset.index);
-          renderAll();
-        }});
-      }});
     }}
 
     function renderSavedReports() {{
@@ -567,12 +733,6 @@ def build_dashboard_html(initial_state):
         return;
       }}
       container.innerHTML = items.map((item) => `<div class="saved-item" data-path="${{item}}">${{item}}</div>`).join('');
-      container.querySelectorAll('.saved-item').forEach((item) => {{
-        item.addEventListener('click', async () => {{
-          document.getElementById('load-scan-path').value = item.dataset.path;
-          await runLoadScan(item.dataset.path);
-        }});
-      }});
     }}
 
     function scoreTable(scores) {{
@@ -602,37 +762,37 @@ def build_dashboard_html(initial_state):
 
     function renderOverview() {{
       const report = activeReport();
-      const panel = document.getElementById('panel-overview');
       if (!report) {{
-        panel.innerHTML = '<div class="empty">No active report. Start with a scan, crawl, or saved report load.</div>';
-        return;
+        return '<div class="empty">No active report. Start with a scan, crawl, or saved report load.</div>';
       }}
       const scan = report.scan_result || {{}};
       const artifact = scan.artifact_profile || {{}};
-      panel.innerHTML = `
+      return `
         <div class="details-grid">
-          <div class="detail-card"><strong class="muted">File</strong><div>${{report.file || 'Unknown'}}</div></div>
-          <div class="detail-card"><strong class="muted">Mode</strong><div>${{report.mode || 'general'}}</div></div>
-          <div class="detail-card"><strong class="muted">Source Language</strong><div>${{scan.source_language || 'Unknown'}}</div></div>
-          <div class="detail-card"><strong class="muted">Compiler</strong><div>${{scan.compiler || 'Unknown'}}</div></div>
-          <div class="detail-card"><strong class="muted">Build System</strong><div>${{scan.build_system || 'Unknown'}}</div></div>
-          <div class="detail-card"><strong class="muted">Artifact Type</strong><div>${{artifact.artifact_type || 'Unknown'}}</div></div>
+          <div class="detail-card"><strong class="muted">File</strong><div>${{escapeHtml(report.file || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Mode</strong><div>${{escapeHtml(report.mode || 'general')}}</div></div>
+          <div class="detail-card"><strong class="muted">Source Language</strong><div>${{escapeHtml(scan.source_language || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Compiler</strong><div>${{escapeHtml(scan.compiler || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Build System</strong><div>${{escapeHtml(scan.build_system || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Artifact Type</strong><div>${{escapeHtml(artifact.artifact_type || 'Unknown')}}</div></div>
           <div class="detail-card"><strong class="muted">Confidence</strong><div>${{artifact.confidence ?? 0}}</div></div>
-          <div class="detail-card"><strong class="muted">Target / SDK</strong><div>${{artifact.target || 'Unknown'}} / ${{artifact.sdk || 'Unknown'}}</div></div>
+          <div class="detail-card"><strong class="muted">Target / SDK</strong><div>${{escapeHtml(artifact.target || 'Unknown')}} / ${{escapeHtml(artifact.sdk || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Board / Family</strong><div>${{escapeHtml(artifact.board || 'Unknown')}} / ${{escapeHtml(artifact.family || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">RTOS / Runtime</strong><div>${{escapeHtml(artifact.rtos || 'None detected')}} / ${{escapeHtml(artifact.runtime || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Linkage / Loader</strong><div>${{escapeHtml(artifact.linkage_model || 'Unknown')}} / ${{escapeHtml(artifact.loader || 'None')}}</div></div>
+          <div class="detail-card"><strong class="muted">Device Description</strong><div>${{escapeHtml(artifact.device_description || 'Unknown')}}</div></div>
         </div>
       `;
     }}
 
     function renderScores() {{
       const report = activeReport();
-      const panel = document.getElementById('panel-scores');
       if (!report) {{
-        panel.innerHTML = '<div class="empty">No score tables available without an active report.</div>';
-        return;
+        return '<div class="empty">No score tables available without an active report.</div>';
       }}
       const scan = report.scan_result || {{}};
       const artifact = scan.artifact_profile || {{}};
-      panel.innerHTML = `
+      return `
         <div class="split-grid">
           <div><h3>Artifact Scores</h3>${{scoreTable(artifact.scores)}}</div>
           <div><h3>Language Scores</h3>${{scoreTable(scan.language_scores)}}</div>
@@ -644,35 +804,190 @@ def build_dashboard_html(initial_state):
 
     function renderEvidence() {{
       const report = activeReport();
-      const panel = document.getElementById('panel-evidence');
       if (!report) {{
-        panel.innerHTML = '<div class="empty">Evidence appears here when a report is selected.</div>';
-        return;
+        return '<div class="empty">Evidence appears here when a report is selected.</div>';
       }}
       const lines = evidenceList(report);
-      panel.innerHTML = lines.length
+      return lines.length
         ? `<pre>${{lines.join('\\n')}}</pre>`
         : '<div class="empty">No explicit evidence lines were emitted for this report.</div>';
     }}
 
     function renderMetadata() {{
       const report = activeReport();
-      const panel = document.getElementById('panel-metadata');
       if (!report) {{
-        panel.innerHTML = '<div class="empty">Metadata appears here when a report is selected.</div>';
-        return;
+        return '<div class="empty">Metadata appears here when a report is selected.</div>';
       }}
-      panel.innerHTML = `<pre>${{report.metadata_text || 'No metadata text available.'}}</pre>`;
+      return codeBlock(report.metadata_text || 'No metadata text available.');
     }}
 
     function renderJson() {{
       const report = activeReport();
-      const panel = document.getElementById('panel-json');
       if (!report) {{
-        panel.innerHTML = '<div class="empty">JSON payload appears here when a report is selected.</div>';
-        return;
+        return '<div class="empty">JSON payload appears here when a report is selected.</div>';
       }}
-      panel.innerHTML = `<pre>${{JSON.stringify(report, null, 2)}}</pre>`;
+      return codeBlock(JSON.stringify(report, null, 2));
+    }}
+
+    function renderExplain() {{
+      const report = activeReport();
+      if (!report) {{
+        return '<div class="empty">Explainability appears here when a report is selected.</div>';
+      }}
+      const explanations = report.scan_result?.explanations || {{}};
+      const blocks = Object.entries(explanations).map(([key, value]) => `
+        <div class="detail-card">
+          <strong class="muted">${{escapeHtml(key)}}</strong>
+          <div>Predicted: ${{escapeHtml(value.predicted || 'Unknown')}}</div>
+          <div>Confidence Note: ${{escapeHtml(value.confidence_note || 'n/a')}}</div>
+          <div>Margin: ${{value.score_margin ?? 0}}</div>
+          <div style="margin-top:10px;">Top Positive: ${{(value.top_positive || []).map((item) => `${{escapeHtml(item.label)}} (${{item.score}})`).join(', ') || 'None'}}</div>
+          <div style="margin-top:6px;">Competitors: ${{(value.top_competitors || []).map((item) => `${{escapeHtml(item.label)}} (${{item.score}})`).join(', ') || 'None'}}</div>
+        </div>
+      `);
+      return blocks.length ? `<div class="details-grid">${{blocks.join('')}}</div>` : '<div class="empty">No explainability data available.</div>';
+    }}
+
+    function renderHardening() {{
+      const report = activeReport();
+      if (!report) {{
+        return '<div class="empty">Hardening data appears here when a report is selected.</div>';
+      }}
+      const hardening = report.scan_result?.hardening_profile;
+      if (!hardening) {{
+        return '<div class="empty">This scan does not include a hardening profile.</div>';
+      }}
+      return `
+        <div class="details-grid">
+          <div class="detail-card"><strong class="muted">Risk Level</strong><div>${{escapeHtml(hardening.risk_level || 'unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Stripped</strong><div>${{String(hardening.stripped ?? false)}}</div></div>
+          <div class="detail-card"><strong class="muted">Likely Packed</strong><div>${{String(hardening.likely_packed ?? false)}}</div></div>
+          <div class="detail-card"><strong class="muted">Likely Obfuscated</strong><div>${{String(hardening.likely_obfuscated ?? false)}}</div></div>
+          <div class="detail-card"><strong class="muted">Text Entropy</strong><div>${{hardening.text_entropy ?? 0}}</div></div>
+        </div>
+        ${{codeBlock((hardening.signals || []).join('\\n') || 'No hardening signals available.')}}
+      `;
+    }}
+
+    function renderFirmware() {{
+      const report = activeReport();
+      if (!report) {{
+        return '<div class="empty">Firmware fingerprinting appears here when a report is selected.</div>';
+      }}
+      const firmware = report.scan_result?.firmware_fingerprint;
+      if (!firmware) {{
+        return '<div class="empty">This scan does not include a firmware fingerprint.</div>';
+      }}
+      return `
+        <div class="details-grid">
+          <div class="detail-card"><strong class="muted">Firmware Candidate</strong><div>${{String(firmware.is_firmware_candidate ?? false)}}</div></div>
+          <div class="detail-card"><strong class="muted">Confidence</strong><div>${{firmware.firmware_confidence ?? 0}}</div></div>
+          <div class="detail-card"><strong class="muted">Likely MCU</strong><div>${{escapeHtml(firmware.likely_mcu || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">Likely Vendor</strong><div>${{escapeHtml(firmware.likely_vendor || 'Unknown')}}</div></div>
+          <div class="detail-card"><strong class="muted">SDK Candidates</strong><div>${{escapeHtml((firmware.sdk_candidates || []).join(', ') || 'None')}}</div></div>
+          <div class="detail-card"><strong class="muted">RTOS Candidates</strong><div>${{escapeHtml((firmware.rtos_candidates || []).join(', ') || 'None')}}</div></div>
+          <div class="detail-card"><strong class="muted">Board Candidates</strong><div>${{escapeHtml((firmware.board_candidates || []).join(', ') || 'None')}}</div></div>
+        </div>
+        ${{codeBlock((firmware.signals || []).join('\\n') || 'No firmware fingerprint signals available.')}}
+      `;
+    }}
+
+    function renderPlugins() {{
+      const report = activeReport();
+      if (!report) {{
+        return '<div class="empty">Plugin and signature evidence appears here when a report is selected.</div>';
+      }}
+      const pluginEvidence = report.scan_result?.plugin_evidence;
+      if (!pluginEvidence) {{
+        return '<div class="empty">No plugin or signature evidence is attached to this report.</div>';
+      }}
+      const diagnostics = (pluginEvidence.diagnostics || []).join('\\n') || 'No diagnostics.';
+      const categories = ['languages', 'compilers', 'build_systems', 'artifacts']
+        .map((key) => {{
+          const items = pluginEvidence[key] || [];
+          if (!items.length) return '';
+          return `<div class="detail-card"><strong class="muted">${{escapeHtml(key)}}</strong><div>${{items.map((item) => `${{escapeHtml(item.rule)}} -> ${{escapeHtml(item.target)}} (${{item.score_delta ?? 0}})`).join('<br>')}}</div></div>`;
+        }})
+        .filter(Boolean)
+        .join('');
+      return `
+        <div class="details-grid">
+          <div class="detail-card"><strong class="muted">Packs</strong><div>${{escapeHtml((pluginEvidence.pack_names || []).join(', ') || 'None')}}</div></div>
+          ${{categories}}
+        </div>
+        ${{codeBlock(diagnostics)}}
+      `;
+    }}
+
+    function renderDiff() {{
+      const diff = appState.active_diff;
+      if (!diff) {{
+        return '<div class="empty">Run a compare operation to populate a binary diff view.</div>';
+      }}
+      const summary = diff.summary || {{}};
+      const rows = ['language', 'compiler', 'build_system', 'artifact_type', 'artifact_confidence']
+        .map((key) => {{
+          const values = summary[key] || ['Unknown', 'Unknown'];
+          return `<tr><td>${{escapeHtml(key)}}</td><td>${{escapeHtml(values[0])}}</td><td>${{escapeHtml(values[1])}}</td></tr>`;
+        }})
+        .join('');
+      const deltaTable = (entries) => {{
+        if (!entries?.length) return '<div class="muted">No deltas.</div>';
+        return `<table><thead><tr><th>Label</th><th>Before</th><th>After</th><th>Delta</th></tr></thead><tbody>${{entries.slice(0, 12).map((item) => `<tr><td>${{escapeHtml(item.label)}}</td><td>${{item.before}}</td><td>${{item.after}}</td><td>${{item.delta}}</td></tr>`).join('')}}</tbody></table>`;
+      }};
+      return `
+        <div class="info-list">
+          <div class="info-row"><strong class="muted">Left</strong><div>${{escapeHtml(diff.left_file || '')}}</div></div>
+          <div class="info-row"><strong class="muted">Right</strong><div>${{escapeHtml(diff.right_file || '')}}</div></div>
+        </div>
+        <div style="margin-top:14px;"> <table><thead><tr><th>Field</th><th>Left</th><th>Right</th></tr></thead><tbody>${{rows}}</tbody></table></div>
+        <div class="split-grid" style="margin-top:14px;">
+          <div><h3>Language Deltas</h3>${{deltaTable(diff.language_deltas)}}</div>
+          <div><h3>Compiler Deltas</h3>${{deltaTable(diff.compiler_deltas)}}</div>
+          <div><h3>Build Deltas</h3>${{deltaTable(diff.build_deltas)}}</div>
+          <div><h3>Artifact Deltas</h3>${{deltaTable(diff.artifact_deltas)}}</div>
+        </div>
+        <div class="split-grid" style="margin-top:14px;">
+          <div>${{codeBlock((diff.indicator_added || []).map((line) => `+ ${{line}}`).join('\\n') || '(none)')}}</div>
+          <div>${{codeBlock((diff.indicator_removed || []).map((line) => `- ${{line}}`).join('\\n') || '(none)')}}</div>
+        </div>
+      `;
+    }}
+
+    function renderIntegrations() {{
+      const caps = appState.capabilities || {{}};
+      if (!caps.tooling) {{
+        return '<div class="empty">Tooling integration callbacks are unavailable in this dashboard context.</div>';
+      }}
+      if (!toolingSnapshot) {{
+        return '<div class="empty">Loading tooling status…</div>';
+      }}
+      const tools = toolingSnapshot.tools || [];
+      const rows = tools.map((tool) => `
+        <tr>
+          <td>${{escapeHtml(tool.label || tool.key)}}</td>
+          <td>${{tool.installed ? 'Installed' : 'Missing'}}</td>
+          <td>${{escapeHtml(tool.version || tool.path || tool.install_manager_label || 'n/a')}}</td>
+          <td><button type="button" class="ghost" data-tool-detail="${{tool.key}}">Details</button></td>
+        </tr>
+      `).join('');
+      const detail = activeToolKey && toolingSnapshot.details?.[activeToolKey]
+        ? codeBlock(
+            Array.isArray(toolingSnapshot.details[activeToolKey])
+              ? toolingSnapshot.details[activeToolKey].join('\\n')
+              : JSON.stringify(toolingSnapshot.details[activeToolKey], null, 2)
+          )
+        : '<div class="muted">Select a tool for detailed install and path information.</div>';
+      return `
+        <div class="toolbar-row" style="margin-bottom:14px;">
+          <button type="button" id="refresh-tooling-inline">Refresh Tooling Status</button>
+        </div>
+        <table>
+          <thead><tr><th>Tool</th><th>Status</th><th>Path / Version</th><th>Detail</th></tr></thead>
+          <tbody>${{rows}}</tbody>
+        </table>
+        <div style="margin-top:14px;">${{detail}}</div>
+      `;
     }}
 
     function applyCapabilities() {{
@@ -681,22 +996,54 @@ def build_dashboard_html(initial_state):
       document.getElementById('crawl-submit').disabled = !caps.crawl;
       document.getElementById('export-markdown').disabled = !caps.export_md || !activeReport();
       document.getElementById('export-pdf').disabled = !caps.export_pdf || !activeReport();
+      document.getElementById('save-report').disabled = !caps.save_scan || !activeReport();
+      document.getElementById('save-collection').disabled = !caps.save_collection || !appState.report_count;
+      document.getElementById('export-collection-markdown').disabled = !caps.export_collection_md || !appState.report_count;
+      document.getElementById('export-collection-pdf').disabled = !caps.export_collection_pdf || !appState.report_count;
+      document.getElementById('export-plugin').disabled = !caps.tool_plugins || !activeReport();
+      document.getElementById('compare-submit').disabled = !caps.diff || !activeReport();
+      document.getElementById('export-diff').disabled = !appState.active_diff;
       document.getElementById('download-json').disabled = !activeReport();
+    }}
+
+    function renderCurrentPanel() {{
+      const panel = document.getElementById(`panel-${{activeTab}}`);
+      document.querySelectorAll('.panel').forEach((item) => item.classList.remove('active'));
+      panel.classList.add('active');
+      const renderers = {{
+        overview: renderOverview,
+        scores: renderScores,
+        evidence: renderEvidence,
+        explain: renderExplain,
+        hardening: renderHardening,
+        firmware: renderFirmware,
+        plugins: renderPlugins,
+        diff: renderDiff,
+        integrations: renderIntegrations,
+        metadata: renderMetadata,
+        json: renderJson,
+      }};
+      panel.innerHTML = (renderers[activeTab] || (() => '<div class="empty">Unknown tab.</div>'))();
     }}
 
     function renderAll() {{
       document.getElementById('hero-version').textContent = `v${{appState.version}}`;
       renderThemeOptions();
+      renderPluginFormats();
       renderMetrics();
       renderReportList();
       renderSavedReports();
-      renderOverview();
-      renderScores();
-      renderEvidence();
-      renderMetadata();
-      renderJson();
+      renderCurrentPanel();
       applyCapabilities();
       setStatus(appState.message || 'Ready.');
+    }}
+
+    function scheduleRender() {{
+      if (renderFrame !== null) return;
+      renderFrame = requestAnimationFrame(() => {{
+        renderFrame = null;
+        renderAll();
+      }});
     }}
 
     async function refreshState() {{
@@ -704,37 +1051,112 @@ def build_dashboard_html(initial_state):
       if (appState.report_count && (selectedIndex === null || selectedIndex >= appState.report_count)) {{
         selectedIndex = 0;
       }}
-      renderAll();
+      scheduleRender();
     }}
 
     async function runScan(path, mode) {{
       appState = await apiPost('/api/scan', {{ path, mode }});
       selectedIndex = appState.selected_index;
-      renderAll();
+      activeToolKey = null;
+      scheduleRender();
     }}
 
     async function runCrawl(path, mode, recursive, maxFiles) {{
       appState = await apiPost('/api/crawl', {{ path, mode, recursive, max_files: maxFiles }});
       selectedIndex = appState.selected_index;
-      renderAll();
+      activeToolKey = null;
+      scheduleRender();
     }}
 
     async function runLoadScan(path) {{
       appState = await apiPost('/api/load-scan', {{ path }});
       selectedIndex = appState.selected_index;
-      renderAll();
+      activeToolKey = null;
+      scheduleRender();
     }}
 
     async function runLoadCollection(path) {{
       appState = await apiPost('/api/load-collection', {{ path }});
       selectedIndex = appState.selected_index;
-      renderAll();
+      activeToolKey = null;
+      scheduleRender();
     }}
 
     async function runExport(format) {{
       if (selectedIndex === null || selectedIndex === undefined) return;
       const payload = await apiPost('/api/export/report', {{ index: selectedIndex, format }});
       setStatus(payload.message || `Exported ${{format}}.`);
+    }}
+
+    async function runSaveReport() {{
+      if (selectedIndex === null || selectedIndex === undefined) return;
+      const payload = await apiPost('/api/save/report', {{ index: selectedIndex }});
+      setStatus(payload.message);
+      await refreshState();
+    }}
+
+    async function runSaveCollection() {{
+      const payload = await apiPost('/api/save/collection', {{}});
+      setStatus(payload.message);
+      await refreshState();
+    }}
+
+    async function runExportCollection(format) {{
+      const suffix = format === 'markdown' ? '.md' : '.pdf';
+      const stem = activeReport() ? humanFile(activeReport().file).replace(/\\.[^.]+$/, '') : 'collection';
+      const path = `reports/${{stem}}-collection-web${{suffix}}`;
+      const payload = await apiPost('/api/export/collection', {{ format, path }});
+      setStatus(payload.message);
+    }}
+
+    async function runExportPlugin() {{
+      if (selectedIndex === null || selectedIndex === undefined) return;
+      const format = document.getElementById('plugin-format').value;
+      const payload = await apiPost('/api/tool-plugin/export', {{ index: selectedIndex, format }});
+      setStatus(payload.message);
+    }}
+
+    async function ensureToolingSnapshot(force = false) {{
+      if (!force && toolingSnapshot) return;
+      const snapshot = await apiGet('/api/tooling/status');
+      toolingSnapshot = {{
+        ...snapshot,
+        details: toolingSnapshot?.details || {{}},
+      }};
+    }}
+
+    async function showToolDetail(toolKey) {{
+      await ensureToolingSnapshot();
+      if (!toolingSnapshot.details[toolKey]) {{
+        toolingSnapshot.details[toolKey] = await apiGet(`/api/tooling/${{toolKey}}/detail`);
+      }}
+      activeToolKey = toolKey;
+      scheduleRender();
+    }}
+
+    async function runCompare(otherPath, mode) {{
+      if (selectedIndex === null || selectedIndex === undefined) return;
+      const payload = await apiPost('/api/diff', {{ index: selectedIndex, path: otherPath, mode }});
+      appState.active_diff = payload.diff;
+      activeTab = 'diff';
+      scheduleRender();
+      setStatus(payload.message);
+    }}
+
+    async function runExportDiff() {{
+      const report = activeReport();
+      const stem = report ? humanFile(report.file).replace(/\\.[^.]+$/, '') : 'diff';
+      const payload = await apiPost('/api/export/diff', {{ path: `reports/${{stem}}-diff-web.md` }});
+      setStatus(payload.message);
+    }}
+
+    function activateTab(tab) {{
+      activeTab = tab;
+      document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item.dataset.tab === tab));
+      if (tab === 'integrations') {{
+        ensureToolingSnapshot().then(() => scheduleRender()).catch((error) => setStatus(error.message));
+      }}
+      scheduleRender();
     }}
 
     document.getElementById('scan-form').addEventListener('submit', async (event) => {{
@@ -779,6 +1201,18 @@ def build_dashboard_html(initial_state):
       }}
     }});
 
+    document.getElementById('compare-form').addEventListener('submit', async (event) => {{
+      event.preventDefault();
+      try {{
+        await runCompare(
+          document.getElementById('compare-path').value,
+          document.getElementById('compare-mode').value,
+        );
+      }} catch (error) {{
+        setStatus(error.message);
+      }}
+    }});
+
     document.getElementById('refresh-state').addEventListener('click', async () => {{
       try {{
         await refreshState();
@@ -798,14 +1232,65 @@ def build_dashboard_html(initial_state):
     document.getElementById('export-pdf').addEventListener('click', async () => {{
       try {{ await runExport('pdf'); }} catch (error) {{ setStatus(error.message); }}
     }});
+    document.getElementById('save-report').addEventListener('click', async () => {{
+      try {{ await runSaveReport(); }} catch (error) {{ setStatus(error.message); }}
+    }});
+    document.getElementById('save-collection').addEventListener('click', async () => {{
+      try {{ await runSaveCollection(); }} catch (error) {{ setStatus(error.message); }}
+    }});
+    document.getElementById('export-collection-markdown').addEventListener('click', async () => {{
+      try {{ await runExportCollection('markdown'); }} catch (error) {{ setStatus(error.message); }}
+    }});
+    document.getElementById('export-collection-pdf').addEventListener('click', async () => {{
+      try {{ await runExportCollection('pdf'); }} catch (error) {{ setStatus(error.message); }}
+    }});
+    document.getElementById('export-plugin').addEventListener('click', async () => {{
+      try {{ await runExportPlugin(); }} catch (error) {{ setStatus(error.message); }}
+    }});
+    document.getElementById('export-diff').addEventListener('click', async () => {{
+      try {{ await runExportDiff(); }} catch (error) {{ setStatus(error.message); }}
+    }});
+
+    document.getElementById('report-list').addEventListener('click', (event) => {{
+      const item = event.target.closest('.report-item');
+      if (!item) return;
+      selectedIndex = Number(item.dataset.index);
+      scheduleRender();
+    }});
+
+    document.getElementById('saved-list').addEventListener('click', async (event) => {{
+      const item = event.target.closest('.saved-item');
+      if (!item) return;
+      try {{
+        document.getElementById('load-scan-path').value = item.dataset.path;
+        await runLoadScan(item.dataset.path);
+      }} catch (error) {{
+        setStatus(error.message);
+      }}
+    }});
 
     document.querySelectorAll('.tab').forEach((button) => {{
-      button.addEventListener('click', () => {{
-        document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
-        document.querySelectorAll('.panel').forEach((item) => item.classList.remove('active'));
-        button.classList.add('active');
-        document.getElementById(`panel-${{button.dataset.tab}}`).classList.add('active');
-      }});
+      button.addEventListener('click', () => activateTab(button.dataset.tab));
+    }});
+
+    document.addEventListener('click', async (event) => {{
+      const toolButton = event.target.closest('[data-tool-detail]');
+      if (!toolButton) return;
+      try {{
+        await showToolDetail(toolButton.dataset.toolDetail);
+      }} catch (error) {{
+        setStatus(error.message);
+      }}
+    }});
+
+    document.addEventListener('click', async (event) => {{
+      if (event.target.id !== 'refresh-tooling-inline') return;
+      try {{
+        await ensureToolingSnapshot(true);
+        scheduleRender();
+      }} catch (error) {{
+        setStatus(error.message);
+      }}
     }});
 
     themeSelect.addEventListener('change', () => {{
@@ -889,6 +1374,13 @@ def create_dashboard_server(
                 if path == "/api/state":
                     _send_json(self, 200, runtime.state())
                     return
+                if path == "/api/tooling/status":
+                    _send_json(self, 200, runtime.tooling_status())
+                    return
+                if path.startswith("/api/tooling/") and path.endswith("/detail"):
+                    fragment = path[len("/api/tooling/") : -len("/detail")].strip("/")
+                    _send_json(self, 200, runtime.tooling_detail(fragment))
+                    return
                 if path.startswith("/api/report/") and path.endswith("/json"):
                     fragment = path[len("/api/report/") : -len("/json")].strip("/")
                     report = runtime.get_report(fragment)
@@ -930,6 +1422,41 @@ def create_dashboard_server(
                         payload.get("format"),
                         path=payload.get("path"),
                     )
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/save/report":
+                    result = runtime.save_report(payload.get("index"), path=payload.get("path"))
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/save/collection":
+                    result = runtime.save_collection(path=payload.get("path"))
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/export/collection":
+                    result = runtime.export_collection(
+                        payload.get("format"),
+                        payload.get("path"),
+                    )
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/tool-plugin/export":
+                    result = runtime.export_tool_plugin(
+                        payload.get("index"),
+                        payload.get("format"),
+                        path=payload.get("path"),
+                    )
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/diff":
+                    result = runtime.compare_with(
+                        payload.get("index"),
+                        payload.get("path"),
+                        mode=payload.get("mode", "general"),
+                    )
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/export/diff":
+                    result = runtime.export_diff_markdown(payload.get("path"))
                     _send_json(self, 200, result)
                     return
                 _send_json(self, 404, {"error": f"Unknown route: {html.escape(path)}"})
