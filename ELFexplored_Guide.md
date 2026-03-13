@@ -328,6 +328,7 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - print download/install methods for a specific tool: `python3 install_deps.py --tool-info <tool>`
 - download a tool package without installing it: `python3 install_deps.py --download-tool <tool>`
 - install external tool when supported: `python3 install_deps.py --install-tool <tool>`
+- Python dependency installs via `install_deps.py` always use `pip install --break-system-packages ...`
 
 External-tool export notes:
 - Binary Ninja / Ghidra / IDA outputs are Python scripts that reapply inferred names and comments.
@@ -362,10 +363,12 @@ Startup/report UX behavior:
   - current operation/status line
   - verbose log of downloads, extraction, wrapper creation, and package-manager output
   - threaded execution so the Textual application remains responsive
+- report mode also exposes per-tool workbench commands so the current binary can be sent directly into the integrated Tool Workbench
 
 Additional quick bindings in report view:
 - `e` for opening the split-pane editor workbench
 - `r` for rescan current mode
+- `t` for opening the default tool workbench
 - `1` / `2` / `3` for mode switch + rescan
 
 ### 10.6 Settings Persistence
@@ -466,6 +469,7 @@ Workspace commands:
 - `tool-install <tool>`
 - `tool-list`
 - `tool-export <format> [path]`
+- `tool-ui [tool] [path]`
 - `diff <other-file> [mode]`
 - `diff-ui <other-file> [mode]`
 - `show`
@@ -515,6 +519,26 @@ Workspace UX behavior:
 - workspace mode starts with a splash screen that shows `ELFexplorer <version>` and a progress bar while integrations are checked
 - `tool-status` uses the same background task system instead of blocking the command loop
 - `tool-download` and `tool-install` use a popup task window with live logs and a determinate progress bar
+- `tool-ui` opens the integrated Tool Workbench, and `Ctrl+T` opens the default workbench quickly
+
+### 11.1a Tool Workbench
+
+The Tool Workbench is a dedicated Textual screen for third-party integrations.
+
+Layout:
+- left pane: tool catalog, install/status summary, preset catalog, launch/export actions
+- right pane: target path, raw args field, progress bar, live output log, preset/command execution controls
+
+Behavior:
+- CLI/headless-friendly tools can run commands directly from the workbench and stream results into the output log
+- GUI-centric tools are launched from the workbench, but remain external windows rather than embedded terminal panes
+- when a scan report is available, the workbench can export the matching integration script for the selected tool
+
+Built-in presets currently focus on stable command-line tools:
+- `radare2`: file info, sections, symbols, functions, strings
+- `rizin`: file info, sections, symbols, functions, strings
+- `cutter`: version
+- `imhex`: version
 
 ### 11.2 Split-Pane Editor Workbench
 

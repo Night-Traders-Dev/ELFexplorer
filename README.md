@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.3-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.4-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,15 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.4
+
+- Added an in-app third-party Tool Workbench:
+  - open per-tool workbench screens from the Textual report view and workspace
+  - run capturable CLI/headless commands for tools such as `radare2` and `rizin`
+  - launch GUI-centric tools such as Binary Ninja, Ghidra, Cutter, IDA, and ImHex from inside ELFexplorer
+  - display live command output inside the workbench and export matching integration scripts from the same screen
+- Updated `install_deps.py` pip installs to always pass `--break-system-packages`.
 
 ## What Changed in 0.11.3
 
@@ -379,6 +388,7 @@ The workspace supports:
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - tool integrations (`tool-list`, `tool-export <format> [path]`)
+- in-app tool workbench (`tool-ui [tool] [path]`, or `Ctrl+T`)
 - host tooling checks/install (`tool-status`, `tool-info <tool>`, `tool-download <tool>`, `tool-install <tool>`)
 - summary display (`show`)
 - advanced ELF editing:
@@ -439,6 +449,26 @@ Tooling UX details:
 - `tool-download <tool>` opens a popup with a progress bar and live download log
 - `tool-install <tool>` opens a popup with a progress bar and live install log
 - the workspace startup splash preloads host-tool status so the first tooling view does not block
+- `tool-ui [tool] [path]` opens the integrated Tool Workbench for launching tools, running commands, and reviewing output
+
+### Tool Workbench
+
+The Tool Workbench provides an in-app control surface for third-party integrations:
+- tool catalog with install/mode/status summary
+- preset catalog for CLI/headless tools
+- target-path field and raw-args field
+- launch button for GUI-centric tools
+- run-preset / run-args actions for tools that can produce capturable terminal output
+- live output log and progress bar
+- export button for matching integration scripts when a scan report is active
+
+Current built-in command presets focus on tools that have stable CLI output:
+- `radare2`: file info, sections, symbols, functions, strings
+- `rizin`: file info, sections, symbols, functions, strings
+- `cutter`: version
+- `imhex`: version
+
+GUI-centric tools still integrate through the same screen, but they are launched externally rather than embedded as native panes inside the terminal UI.
 
 Example editor session:
 
@@ -615,6 +645,8 @@ python3 install_deps.py --download-tool ghidra --dry-run
 python3 install_deps.py --install-tool radare2 --dry-run
 python3 install_deps.py --install-tool ghidra
 ```
+
+Python dependency installation now always uses `pip install --break-system-packages ...` through `install_deps.py`.
 
 Current behavior:
 - detects host OS and primary package manager

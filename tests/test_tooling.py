@@ -302,6 +302,85 @@ class ToolingTests(unittest.TestCase):
         ghidra = next(item for item in snapshot["tools"] if item["key"] == "ghidra")
         self.assertIn("Status probe failed", ghidra["manual_install"])
 
+    def test_get_external_tool_workbench_model_exposes_presets(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        with mock.patch("advanced.tooling.shutil.which", return_value=None):
+            model = tooling.get_external_tool_workbench_model(
+                "radare2",
+                target_path="/tmp/sample.elf",
+                environment=environment,
+            )
+
+        self.assertEqual(model["tool_key"], "radare2")
+        self.assertTrue(model["cli_friendly"])
+        self.assertTrue(model["presets"])
+        self.assertEqual(model["target_path"], "/tmp/sample.elf")
+
+    def test_run_external_tool_command_dry_run_substitutes_target_path(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        status = {
+            "key": "radare2",
+            "label": "radare2",
+            "installed": True,
+            "path": "/usr/bin/r2",
+            "version": "5.9.0",
+        }
+        events = []
+        with mock.patch("advanced.tooling.get_external_tool_status", return_value=status):
+            result = tooling.run_external_tool_command(
+                "radare2",
+                args=["-A", "-q", "-c", "iI", "{file}"],
+                target_path="/tmp/hello.elf",
+                dry_run=True,
+                environment=environment,
+                event_cb=events.append,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["command"][-1], "/tmp/hello.elf")
+        self.assertEqual(events[-1]["progress"], 100.0)
+
+    def test_launch_external_tool_dry_run_uses_default_launch_args(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        status = {
+            "key": "imhex",
+            "label": "ImHex",
+            "installed": True,
+            "path": "/usr/bin/imhex",
+            "version": "1.0",
+        }
+        with mock.patch("advanced.tooling.get_external_tool_status", return_value=status):
+            result = tooling.launch_external_tool(
+                "imhex",
+                target_path="/tmp/fw.bin",
+                dry_run=True,
+                environment=environment,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["command"], ["/usr/bin/imhex", "/tmp/fw.bin"])
+
 
 if __name__ == "__main__":
     unittest.main()

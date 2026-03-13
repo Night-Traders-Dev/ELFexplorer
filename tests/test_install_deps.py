@@ -26,7 +26,10 @@ class InstallDepsTests(unittest.TestCase):
 
     def test_build_install_cmd_with_upgrade(self):
         command = self.mod.build_install_cmd("python3", ["pyelftools"], upgrade=True)
-        self.assertEqual(command, ["python3", "-m", "pip", "install", "--upgrade", "pyelftools"])
+        self.assertEqual(
+            command,
+            ["python3", "-m", "pip", "install", "--break-system-packages", "--upgrade", "pyelftools"],
+        )
 
     def test_main_dry_run_runtime_profile(self):
         capture = io.StringIO()
@@ -38,6 +41,7 @@ class InstallDepsTests(unittest.TestCase):
         self.assertIn("pyelftools", output)
         self.assertIn("textual", output)
         self.assertIn("reportlab", output)
+        self.assertIn("--break-system-packages", output)
 
     def test_main_print_groups(self):
         capture = io.StringIO()

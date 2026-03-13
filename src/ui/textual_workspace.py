@@ -111,6 +111,7 @@ def run_textual_workspace(callbacks):
             ("ctrl+c", "quit", "Quit"),
             ("ctrl+l", "clear_log", "Clear Log"),
             ("ctrl+e", "open_editor_ui", "Editor UI"),
+            ("ctrl+t", "open_default_tool_workbench", "Tool UI"),
         ]
 
         def __init__(self):
@@ -139,9 +140,9 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
-                    "tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>\n"
+                    "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
-                    "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
+                    "edit-ui (or Ctrl+E) opens split-pane editor workbench | Ctrl+T opens tool workbench\n"
                     "edit-open <path> | edit-status | edit-show-elf | edit-show-uf2 | edit-list-phdr | edit-list-shdr | edit-list-blocks | edit-show-block <idx> | edit-hex [offset] [length] [width]\n"
                     "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
                     "edit-disasm [section] [max_lines] | edit-disasm-range <start> <stop> [section] [max_lines]\n"
@@ -177,6 +178,11 @@ def run_textual_workspace(callbacks):
                     f"Tooling: Install {meta['label']}",
                     f"Install {meta['label']} using the detected package manager when supported",
                     lambda tool_key=tool_key: self.action_install_external_tool(tool_key),
+                )
+                yield SystemCommand(
+                    f"Tooling: Open Workbench for {meta['label']}",
+                    f"Open the integrated tool workbench for {meta['label']}",
+                    lambda tool_key=tool_key: self.action_open_tool_workbench(tool_key),
                 )
 
         def action_clear_log(self):
@@ -265,6 +271,13 @@ def run_textual_workspace(callbacks):
             for index, report in enumerate(self.current_reports, start=1):
                 self._log(f"{index:>3}. {_report_brief(report)}")
 
+        def _default_tool_target(self):
+            if self.editor is not None:
+                return self.editor.path
+            if self.last_report and self.last_report.get("file"):
+                return self.last_report.get("file")
+            return None
+
         def _require_editor(self):
             if self.editor is None:
                 self._log("[red]No active editor session.[/red] Use: edit-open <path>")
@@ -319,6 +332,21 @@ def run_textual_workspace(callbacks):
             from ui.textual_editor import EditorWorkbenchScreen
 
             self.push_screen(EditorWorkbenchScreen.build(editor))
+
+        def action_open_tool_workbench(self, tool_key="radare2", target_path=None):
+            from ui.textual_tool_workbench import ToolWorkbenchScreenFactory
+
+            report = self.last_report if isinstance(self.last_report, dict) else None
+            self.push_screen(
+                ToolWorkbenchScreenFactory.build(
+                    initial_tool=tool_key,
+                    target_path=target_path or self._default_tool_target(),
+                    report=report,
+                )
+            )
+
+        def action_open_default_tool_workbench(self):
+            self.action_open_tool_workbench("radare2")
 
         def action_tool_status(self):
             def runner(emit):
@@ -452,7 +480,10 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
-                    self._log("tool-list | tool-export <format> [path] | tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>")
+                    self._log(
+                        "tool-list | tool-export <format> [path] | tool-ui [tool] [path] | "
+                        "tool-status | tool-info <tool> | tool-download <tool> | tool-install <tool>"
+                    )
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <path> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
@@ -611,6 +642,12 @@ def run_textual_workspace(callbacks):
 
                 if command == "tool-status":
                     self.action_tool_status()
+                    return
+
+                if command == "tool-ui":
+                    tool_key = args[0] if args else "radare2"
+                    target_path = args[1] if len(args) >= 2 else None
+                    self.action_open_tool_workbench(tool_key, target_path=target_path)
                     return
 
                 if command == "tool-info":

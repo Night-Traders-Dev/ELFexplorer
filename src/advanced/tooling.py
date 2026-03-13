@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -212,9 +213,130 @@ THIRD_PARTY_TOOLS = {
     },
 }
 
+TOOL_WORKBENCH_PROFILES = {
+    "binaryninja": {
+        "launch_args": ["{file}"],
+        "cli_friendly": False,
+        "presets": [],
+    },
+    "ghidra": {
+        "launch_args": [],
+        "cli_friendly": False,
+        "presets": [],
+    },
+    "ida": {
+        "launch_args": ["{file}"],
+        "cli_friendly": False,
+        "presets": [],
+    },
+    "radare2": {
+        "launch_args": ["{file}"],
+        "cli_friendly": True,
+        "presets": [
+            {
+                "key": "file-info",
+                "label": "File Info",
+                "description": "Run radare2 metadata summary (`iI`).",
+                "args": ["-A", "-q", "-c", "iI", "{file}"],
+            },
+            {
+                "key": "sections",
+                "label": "Sections",
+                "description": "List sections (`iS`).",
+                "args": ["-A", "-q", "-c", "iS", "{file}"],
+            },
+            {
+                "key": "symbols",
+                "label": "Symbols",
+                "description": "List symbols (`is`).",
+                "args": ["-A", "-q", "-c", "is", "{file}"],
+            },
+            {
+                "key": "functions",
+                "label": "Functions",
+                "description": "Analyze and list functions (`afl`).",
+                "args": ["-A", "-q", "-c", "afl", "{file}"],
+            },
+            {
+                "key": "strings",
+                "label": "Strings",
+                "description": "List strings (`iz`).",
+                "args": ["-A", "-q", "-c", "iz", "{file}"],
+            },
+        ],
+    },
+    "cutter": {
+        "launch_args": ["{file}"],
+        "cli_friendly": False,
+        "presets": [
+            {
+                "key": "version",
+                "label": "Version",
+                "description": "Print Cutter version and exit.",
+                "args": ["--version"],
+            }
+        ],
+    },
+    "rizin": {
+        "launch_args": ["{file}"],
+        "cli_friendly": True,
+        "presets": [
+            {
+                "key": "file-info",
+                "label": "File Info",
+                "description": "Run Rizin metadata summary (`iI`).",
+                "args": ["-A", "-q", "-c", "iI", "{file}"],
+            },
+            {
+                "key": "sections",
+                "label": "Sections",
+                "description": "List sections (`iS`).",
+                "args": ["-A", "-q", "-c", "iS", "{file}"],
+            },
+            {
+                "key": "symbols",
+                "label": "Symbols",
+                "description": "List symbols (`is`).",
+                "args": ["-A", "-q", "-c", "is", "{file}"],
+            },
+            {
+                "key": "functions",
+                "label": "Functions",
+                "description": "Analyze and list functions (`afl`).",
+                "args": ["-A", "-q", "-c", "afl", "{file}"],
+            },
+            {
+                "key": "strings",
+                "label": "Strings",
+                "description": "List strings (`iz`).",
+                "args": ["-A", "-q", "-c", "iz", "{file}"],
+            },
+        ],
+    },
+    "imhex": {
+        "launch_args": ["{file}"],
+        "cli_friendly": False,
+        "presets": [
+            {
+                "key": "version",
+                "label": "Version",
+                "description": "Print ImHex version and exit.",
+                "args": ["--version"],
+            }
+        ],
+    },
+}
+
 
 def list_external_tools():
     return dict(THIRD_PARTY_TOOLS)
+
+
+def _get_tool_workbench_profile(tool_key):
+    return TOOL_WORKBENCH_PROFILES.get(
+        tool_key,
+        {"launch_args": ["{file}"], "cli_friendly": False, "presets": []},
+    )
 
 
 def _normalize_os(system_name: str | None = None):
@@ -954,6 +1076,233 @@ def list_external_tool_install_methods(tool_key):
             }
         )
     return methods
+
+
+def list_external_tool_presets(tool_key):
+    if tool_key not in THIRD_PARTY_TOOLS:
+        raise ValueError(f"Unsupported external tool '{tool_key}'.")
+    profile = _get_tool_workbench_profile(tool_key)
+    return [dict(item) for item in profile.get("presets", [])]
+
+
+def _resolve_tool_args(arg_tokens, target_path=None):
+    resolved = []
+    target_text = str(Path(target_path).expanduser()) if target_path else None
+    for token in arg_tokens:
+        value = str(token)
+        if "{file}" in value:
+            if not target_text:
+                raise ValueError("This command requires a target binary path.")
+            value = value.replace("{file}", target_text)
+        resolved.append(value)
+    return resolved
+
+
+def _normalize_tool_args(args):
+    if args is None:
+        return []
+    if isinstance(args, str):
+        return shlex.split(args)
+    return [str(item) for item in args]
+
+
+def get_external_tool_workbench_model(tool_key, target_path=None, environment=None):
+    if tool_key not in THIRD_PARTY_TOOLS:
+        raise ValueError(f"Unsupported external tool '{tool_key}'.")
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(tool_key, environment=environment)
+    profile = _get_tool_workbench_profile(tool_key)
+    return {
+        "tool_key": tool_key,
+        "status": status,
+        "target_path": str(Path(target_path).expanduser()) if target_path else "",
+        "cli_friendly": bool(profile.get("cli_friendly")),
+        "launch_args": list(profile.get("launch_args", [])),
+        "presets": list_external_tool_presets(tool_key),
+    }
+
+
+def run_external_tool_command(
+    tool_key,
+    args=None,
+    target_path=None,
+    dry_run=False,
+    environment=None,
+    event_cb=None,
+    cwd=None,
+):
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(tool_key, environment=environment)
+    if not status.get("installed"):
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"{status['label']} is not installed on this host.",
+            progress=100.0,
+        )
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"{status['label']} is not installed on this host.",
+            "status": status,
+        }
+
+    arg_tokens = _normalize_tool_args(args)
+    if not arg_tokens:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": "No command arguments provided.",
+            "status": status,
+        }
+    resolved_args = _resolve_tool_args(arg_tokens, target_path=target_path)
+    command = [status["path"], *resolved_args]
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Preparing tool command for {status['label']}",
+        progress=5.0,
+        command=command,
+    )
+    if dry_run:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"Dry run: {' '.join(command)}",
+            progress=100.0,
+            command=command,
+        )
+        return {
+            "ok": True,
+            "changed": False,
+            "message": f"Dry run: {' '.join(command)}",
+            "status": status,
+            "command": command,
+        }
+
+    start_progress, end_progress = 10.0, 100.0
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Running {status['label']} command",
+        progress=start_progress,
+        command=command,
+    )
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    output = "\n".join(
+        chunk for chunk in [(completed.stdout or "").strip(), (completed.stderr or "").strip()] if chunk
+    ).strip()
+    if output:
+        for line in output.splitlines():
+            _emit_tool_event(event_cb, "log", line, progress=80.0)
+    ok = completed.returncode == 0
+    _emit_tool_event(
+        event_cb,
+        "progress",
+        f"{status['label']} command {'completed' if ok else 'failed'}",
+        progress=end_progress,
+        returncode=completed.returncode,
+    )
+    return {
+        "ok": ok,
+        "changed": False,
+        "message": f"{status['label']} command {'completed' if ok else 'failed'}.",
+        "status": status,
+        "command": command,
+        "returncode": completed.returncode,
+        "output": output,
+    }
+
+
+def launch_external_tool(
+    tool_key,
+    target_path=None,
+    args=None,
+    dry_run=False,
+    environment=None,
+    event_cb=None,
+    cwd=None,
+):
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(tool_key, environment=environment)
+    if not status.get("installed"):
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"{status['label']} is not installed on this host.",
+            progress=100.0,
+        )
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"{status['label']} is not installed on this host.",
+            "status": status,
+        }
+
+    profile = _get_tool_workbench_profile(tool_key)
+    arg_tokens = _normalize_tool_args(args)
+    if not arg_tokens:
+        arg_tokens = list(profile.get("launch_args", []))
+    resolved_args = _resolve_tool_args(arg_tokens, target_path=target_path)
+    command = [status["path"], *resolved_args]
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Preparing external launch for {status['label']}",
+        progress=10.0,
+        command=command,
+    )
+    if dry_run:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"Dry run: {' '.join(command)}",
+            progress=100.0,
+            command=command,
+        )
+        return {
+            "ok": True,
+            "changed": False,
+            "message": f"Dry run: {' '.join(command)}",
+            "status": status,
+            "command": command,
+        }
+
+    creationflags = 0
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        cwd=cwd,
+        start_new_session=(os.name != "nt"),
+        creationflags=creationflags,
+    )
+    _emit_tool_event(
+        event_cb,
+        "progress",
+        f"Launched {status['label']} (pid={process.pid})",
+        progress=100.0,
+        pid=process.pid,
+    )
+    return {
+        "ok": True,
+        "changed": False,
+        "message": f"Launched {status['label']} (pid={process.pid}).",
+        "status": status,
+        "command": command,
+        "pid": process.pid,
+    }
 
 
 def describe_external_tool(tool_key, environment=None):

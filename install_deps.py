@@ -63,7 +63,7 @@ def resolve_packages(groups):
 
 
 def build_install_cmd(python_executable, packages, upgrade=False):
-    command = [python_executable, "-m", "pip", "install"]
+    command = [python_executable, "-m", "pip", "install", "--break-system-packages"]
     if upgrade:
         command.append("--upgrade")
     command.extend(packages)

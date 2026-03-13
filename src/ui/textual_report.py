@@ -145,6 +145,7 @@ def run_textual_report(report: Dict):
             ("q", "quit", "Quit"),
             ("r", "rescan_current_mode", "Rescan"),
             ("e", "open_editor_workbench", "Editor"),
+            ("t", "open_default_tool_workbench", "Tool UI"),
             ("1", "set_mode_general", "Mode: General"),
             ("2", "set_mode_important", "Mode: Important"),
             ("3", "set_mode_detailed", "Mode: Detailed"),
@@ -222,6 +223,11 @@ def run_textual_report(report: Dict):
                     f"Tooling: Install {meta['label']}",
                     f"Install {meta['label']} using the detected package manager when supported",
                     lambda tool_key=tool_key: self.action_install_external_tool(tool_key),
+                )
+                yield SystemCommand(
+                    f"Tooling: Open Workbench for {meta['label']}",
+                    f"Open the integrated tool workbench for {meta['label']}",
+                    lambda tool_key=tool_key: self.action_open_tool_workbench(tool_key),
                 )
             yield SystemCommand(
                 "Integrations: Export Binary Ninja Script",
@@ -706,6 +712,20 @@ def run_textual_report(report: Dict):
                     title="Editor",
                     severity="error",
                 )
+
+        def action_open_tool_workbench(self, tool_key: str):
+            from ui.textual_tool_workbench import ToolWorkbenchScreenFactory
+
+            self.push_screen(
+                ToolWorkbenchScreenFactory.build(
+                    initial_tool=tool_key,
+                    target_path=self.report.get("file"),
+                    report=self.report,
+                )
+            )
+
+        def action_open_default_tool_workbench(self):
+            self.action_open_tool_workbench("radare2")
 
         def on_mount(self) -> None:
             self._apply_saved_theme()
