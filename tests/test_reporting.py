@@ -112,6 +112,8 @@ class ReportingTests(unittest.TestCase):
             self.assertIn("| Source Language | C |", text)
             self.assertIn("| Artifact Confidence Calibrated | 91 |", text)
             self.assertIn("## ELF Metadata", text)
+            self.assertIn("## Tool Integrations", text)
+            self.assertIn("| ghidra | Ghidra Script |", text)
 
     def test_export_collection_markdown_contains_index(self):
         collection = {

@@ -129,6 +129,7 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
+                    "tool-list | tool-export <format> [path]\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
                     "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
                     "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
@@ -223,6 +224,7 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
+                    self._log("tool-list | tool-export <format> [path]")
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <elf> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
@@ -365,6 +367,34 @@ def run_textual_workspace(callbacks):
                     self._log("[bold]Current report:[/bold]")
                     for line in _report_detail_lines(self.last_report):
                         self._log(f"  {line}")
+                    return
+
+                if command == "tool-list":
+                    formats = callbacks["list_tool_plugins"]()
+                    self._log("[bold]Available tool plugins/scripts:[/bold]")
+                    for key in sorted(formats):
+                        meta = formats[key]
+                        self._log(
+                            f"  {key}: {meta.get('label', key)} "
+                            f"({meta.get('extension', '')}) - {meta.get('description', '')}"
+                        )
+                    return
+
+                if command == "tool-export":
+                    if not self.last_report:
+                        self._log("[red]No current report to export.[/red]")
+                        return
+                    if not args:
+                        self._log("[red]Usage:[/red] tool-export <format> [path]")
+                        return
+                    tool_format = args[0]
+                    path = None
+                    if len(args) >= 2:
+                        path = args[1]
+                    else:
+                        path = callbacks["default_tool_plugin_path"](self.last_report, tool_format)
+                    exported = callbacks["export_tool_plugin"](self.last_report, path, tool_format)
+                    self._log(f"[green]Exported {tool_format} plugin/script:[/green] {exported}")
                     return
 
                 if command in {"diff", "diff-ui"}:

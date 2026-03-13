@@ -14,9 +14,12 @@ from detect.constants import (
     BUILD_SYSTEM_HEURISTICS,
     BUILD_SYSTEM_MARKERS,
     COMPILER_CLANG_STRING_MARKERS,
+    COMPILER_DMD_STRING_MARKERS,
     COMPILER_FASM_STRING_MARKERS,
+    COMPILER_FREEPASCAL_STRING_MARKERS,
     COMPILER_GCC_STRING_MARKERS,
     COMPILER_GDC_STRING_MARKERS,
+    COMPILER_GFORTRAN_STRING_MARKERS,
     COMPILER_GHC_STRING_MARKERS,
     COMPILER_GO_STRING_MARKERS,
     COMPILER_HEURISTICS,
@@ -24,10 +27,12 @@ from detect.constants import (
     COMPILER_LDC_STRING_MARKERS,
     COMPILER_MASM_STRING_MARKERS,
     COMPILER_NASM_STRING_MARKERS,
+    COMPILER_GNAT_STRING_MARKERS,
     COMPILER_OCAMLOPT_STRING_MARKERS,
     COMPILER_RUSTC_STRING_MARKERS,
     COMPILER_TASM_STRING_MARKERS,
     COMPILER_TINYCC_STRING_MARKERS,
+    COMPILER_YASM_STRING_MARKERS,
     COMPILER_ZIG_STRING_MARKERS,
     CRYSTAL_STRING_MARKERS,
     CSHARP_STRING_MARKERS,
@@ -38,13 +43,18 @@ from detect.constants import (
     KOTLIN_NATIVE_STRING_MARKERS,
     LUA_STRING_MARKERS,
     NIM_STRING_MARKERS,
+    OBJC_STRING_MARKERS,
     OCAML_STRING_MARKERS,
     PASCAL_STRING_MARKERS,
+    PERL_STRING_MARKERS,
+    R_STRING_MARKERS,
+    RUBY_STRING_MARKERS,
     SAGELANG_GENERATED_C_PATTERN,
     SAGELANG_RUNTIME_STRINGS,
     SAGELANG_STRONG_STRING_MARKERS,
     SAGELANG_TOKEN_PATTERN,
     SUPPORTED_LANGUAGES,
+    TCL_STRING_MARKERS,
     ZIG_STRING_MARKERS,
     ZIG_TOKEN_PATTERN,
 )
@@ -333,6 +343,36 @@ def _detect_language(blob, artifact_profile):
     elif len(lua_hits) == 1:
         scores["Lua"] += 5
 
+    ruby_hits = _marker_hits(blob, RUBY_STRING_MARKERS)
+    if len(ruby_hits) >= 2:
+        scores["Ruby"] += 12
+    elif len(ruby_hits) == 1:
+        scores["Ruby"] += 5
+
+    perl_hits = _marker_hits(blob, PERL_STRING_MARKERS)
+    if len(perl_hits) >= 2:
+        scores["Perl"] += 12
+    elif len(perl_hits) == 1:
+        scores["Perl"] += 5
+
+    tcl_hits = _marker_hits(blob, TCL_STRING_MARKERS)
+    if len(tcl_hits) >= 2:
+        scores["Tcl"] += 12
+    elif len(tcl_hits) == 1:
+        scores["Tcl"] += 5
+
+    r_hits = _marker_hits(blob, R_STRING_MARKERS)
+    if len(r_hits) >= 2:
+        scores["R"] += 12
+    elif len(r_hits) == 1:
+        scores["R"] += 5
+
+    objc_hits = _marker_hits(blob, OBJC_STRING_MARKERS)
+    if len(objc_hits) >= 2:
+        scores["Objective-C"] += 12
+    elif len(objc_hits) == 1:
+        scores["Objective-C"] += 5
+
     if b"runtime.main" in blob or b"runtime.rt0_go" in blob or b"go build id" in blob:
         scores["Go"] += 14
     if b"rust_begin_unwind" in blob or b"__rust_alloc" in blob or b"_zn4core" in blob:
@@ -383,11 +423,16 @@ def _detect_compiler(blob, source_language, artifact_profile):
         "Clang": COMPILER_CLANG_STRING_MARKERS,
         "Intel ICC/ICX": COMPILER_INTEL_STRING_MARKERS,
         "TinyCC": COMPILER_TINYCC_STRING_MARKERS,
+        "FreePascal": COMPILER_FREEPASCAL_STRING_MARKERS,
+        "DMD": COMPILER_DMD_STRING_MARKERS,
+        "GNAT": COMPILER_GNAT_STRING_MARKERS,
+        "GFortran": COMPILER_GFORTRAN_STRING_MARKERS,
         "Rustc": COMPILER_RUSTC_STRING_MARKERS,
         "Go gc": COMPILER_GO_STRING_MARKERS,
         "Zig": COMPILER_ZIG_STRING_MARKERS,
         "LDC": COMPILER_LDC_STRING_MARKERS,
         "GDC": COMPILER_GDC_STRING_MARKERS,
+        "YASM": COMPILER_YASM_STRING_MARKERS,
         "NASM": COMPILER_NASM_STRING_MARKERS,
         "FASM": COMPILER_FASM_STRING_MARKERS,
         "MASM": COMPILER_MASM_STRING_MARKERS,

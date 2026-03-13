@@ -1,9 +1,11 @@
 import argparse
 
+from advanced.toolbridge import list_tool_plugin_formats
 from version import get_version
 
 
 def build_parser():
+    tool_plugin_formats = sorted(list_tool_plugin_formats())
     parser = argparse.ArgumentParser(
         description=(
             "Analyze ELF-related and firmware binaries "
@@ -169,6 +171,26 @@ def build_parser():
         choices=["union", "prefer-import", "prefer-scan"],
         default="union",
         help="Merge policy when RE annotations are imported.",
+    )
+    parser.add_argument(
+        "--list-tool-plugins",
+        action="store_true",
+        help="List supported external-tool plugin/script export formats.",
+    )
+    parser.add_argument(
+        "--tool-plugin-format",
+        choices=tool_plugin_formats,
+        default="ghidra",
+        help="External-tool plugin/script export format.",
+    )
+    parser.add_argument(
+        "--tool-plugin-export",
+        nargs="?",
+        const="",
+        help=(
+            "Export current scan result as an external-tool plugin/script. "
+            "Optional file or directory path; if omitted, save under ./reports/."
+        ),
     )
     parser.add_argument(
         "--calibration-model",

@@ -282,6 +282,43 @@ class HeuristicDetectionTests(unittest.TestCase):
         )
         self.assertEqual(self.detect_language(elf), "Lua")
 
+    def test_detects_ruby_from_runtime_library(self):
+        elf = FakeELF([FakeSection(".dynamic", tags=[FakeTag("libruby.so.3.3")])])
+        self.assertEqual(self.detect_language(elf), "Ruby")
+
+    def test_detects_perl_from_runtime_symbols(self):
+        elf = FakeELF(
+            [
+                FakeSection(".dynsym", symbols=[FakeSymbol("perl_alloc"), FakeSymbol("perl_parse")]),
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "Perl")
+
+    def test_detects_tcl_from_runtime_symbols(self):
+        elf = FakeELF(
+            [
+                FakeSection(".dynsym", symbols=[FakeSymbol("Tcl_Main"), FakeSymbol("Tcl_CreateInterp")]),
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "Tcl")
+
+    def test_detects_r_from_embedding_symbols(self):
+        elf = FakeELF(
+            [
+                FakeSection(".dynsym", symbols=[FakeSymbol("Rf_initEmbeddedR"), FakeSymbol("Rprintf")]),
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "R")
+
+    def test_detects_objective_c_from_runtime_symbols(self):
+        elf = FakeELF(
+            [
+                FakeSection(".dynamic", tags=[FakeTag("libobjc.so.4")]),
+                FakeSection(".dynsym", symbols=[FakeSymbol("objc_msgSend"), FakeSymbol("__objc_exec_class")]),
+            ]
+        )
+        self.assertEqual(self.detect_language(elf), "Objective-C")
+
     def test_detects_gcc_compiler_from_comment(self):
         elf = FakeELF([FakeSection(".comment", data=b"GCC: (GNU) 13.2.0")])
         self.assertEqual(self.detect_compiler_name(elf), "GCC")
@@ -297,6 +334,26 @@ class HeuristicDetectionTests(unittest.TestCase):
     def test_detects_tinycc_compiler_from_comment(self):
         elf = FakeELF([FakeSection(".comment", data=b"Tiny C Compiler 0.9.27")])
         self.assertEqual(self.detect_compiler_name(elf, source_language="C"), "TinyCC")
+
+    def test_detects_freepascal_compiler_from_comment(self):
+        elf = FakeELF([FakeSection(".comment", data=b"Free Pascal Compiler version 3.2.2")])
+        self.assertEqual(self.detect_compiler_name(elf, source_language="Pascal"), "FreePascal")
+
+    def test_detects_dmd_compiler_from_dwarf_producer(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"Digital Mars D 2.109.1"]))
+        self.assertEqual(self.detect_compiler_name(elf, source_language="D"), "DMD")
+
+    def test_detects_gnat_compiler_from_dwarf_producer(self):
+        elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"GNAT 13.2.1"]))
+        self.assertEqual(self.detect_compiler_name(elf, source_language="Ada"), "GNAT")
+
+    def test_detects_gfortran_compiler_from_runtime_library(self):
+        elf = FakeELF([FakeSection(".dynamic", tags=[FakeTag("libgfortran.so.5")])])
+        self.assertEqual(self.detect_compiler_name(elf, source_language="Fortran"), "GFortran")
+
+    def test_detects_yasm_compiler_from_comment(self):
+        elf = FakeELF([FakeSection(".comment", data=b"yasm version 1.3.0")])
+        self.assertEqual(self.detect_compiler_name(elf, source_language="ASM"), "YASM")
 
     def test_detects_intel_compiler_from_dwarf_producer(self):
         elf = FakeELF([], dwarf_info=FakeDwarfInfo(producers=[b"Intel(R) oneAPI DPC++/C++ Compiler"]))
@@ -441,6 +498,46 @@ class HeuristicDetectionTests(unittest.TestCase):
     def test_detects_build_system_gradle_from_debug_path(self):
         elf = FakeELF([FakeSection(".debug_str", data=b"/workspace/.gradle/caches/modules/main.o")])
         self.assertEqual(self.detect_build_system_name(elf), "Gradle")
+
+    def test_detects_build_system_waf_from_debug_path(self):
+        elf = FakeELF([FakeSection(".debug_str", data=b"/workspace/.waf3-2.0.25/wscript")])
+        self.assertEqual(self.detect_build_system_name(elf), "Waf")
+
+    def test_detects_build_system_qmake_from_debug_path(self):
+        elf = FakeELF([FakeSection(".debug_str", data=b"/workspace/build/.qmake.stash")])
+        self.assertEqual(self.detect_build_system_name(elf), "QMake")
+
+    def test_detects_build_system_premake_from_debug_path(self):
+        elf = FakeELF([FakeSection(".debug_str", data=b"/workspace/scripts/premake5.lua")])
+        self.assertEqual(self.detect_build_system_name(elf), "Premake")
+
+    def test_detects_build_system_cabal_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/work/project/dist-newstyle/build/x86_64-linux"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Cabal")
+
+    def test_detects_build_system_stack_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/work/project/.stack-work/dist/x86_64-linux"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Stack")
+
+    def test_detects_build_system_nix_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/nix/store/abc123-toolchain/src"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Nix")
+
+    def test_detects_build_system_arduino_from_dwarf_path(self):
+        elf = FakeELF(
+            [],
+            dwarf_info=FakeDwarfInfo(cus=[{"DW_AT_comp_dir": "/home/user/Arduino/sketch/sketch.ino"}]),
+        )
+        self.assertEqual(self.detect_build_system_name(elf), "Arduino")
 
     def test_detects_build_system_pico_sdk_from_debug_paths(self):
         elf = FakeELF(

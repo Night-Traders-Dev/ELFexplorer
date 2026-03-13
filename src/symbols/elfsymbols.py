@@ -109,6 +109,13 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
     kotlin_native_symbol_count = 0
     pascal_symbol_count = 0
     crystal_symbol_count = 0
+    julia_symbol_count = 0
+    lua_symbol_count = 0
+    ruby_symbol_count = 0
+    perl_symbol_count = 0
+    tcl_symbol_count = 0
+    r_symbol_count = 0
+    objc_symbol_count = 0
 
     for symbol in symbol_iter:
         name = symbol.name.lower()
@@ -220,8 +227,25 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
             scores["OCaml"] += 3
         if name.startswith("jl_") or name.startswith("julia_"):
             scores["Julia"] += 3
+            julia_symbol_count += 1
         if name.startswith("lua_") or name.startswith("lual_") or "luajit" in name:
             scores["Lua"] += 3
+            lua_symbol_count += 1
+        if name.startswith("rb_") or name.startswith("ruby_") or "libruby" in name:
+            scores["Ruby"] += 3
+            ruby_symbol_count += 1
+        if name.startswith("perl_") or name.startswith("pl_") or name.startswith("perl"):
+            scores["Perl"] += 3
+            perl_symbol_count += 1
+        if name.startswith("tcl_") or name.startswith("tcl") or name.startswith("tclp"):
+            scores["Tcl"] += 3
+            tcl_symbol_count += 1
+        if name in {"rf_initembeddedr", "rf_endembeddedr", "r_inside_r", "rprintf"}:
+            scores["R"] += 4
+            r_symbol_count += 1
+        if "objc_msgsend" in name or "objc_msg_lookup" in name or "__objc_exec_class" in name:
+            scores["Objective-C"] += 4
+            objc_symbol_count += 1
 
         if "rust" in name:
             scores["Rust"] += 1
@@ -289,3 +313,28 @@ def scan_symbols(symbol_iter, scores, seen_names=None):
         scores["Crystal"] += 8
     elif crystal_symbol_count >= 2:
         scores["Crystal"] += 4
+
+    if julia_symbol_count >= 2:
+        scores["Julia"] += 4
+    if lua_symbol_count >= 2:
+        scores["Lua"] += 4
+    if ruby_symbol_count >= 2:
+        scores["Ruby"] += 6
+    elif ruby_symbol_count >= 1:
+        scores["Ruby"] += 3
+    if perl_symbol_count >= 2:
+        scores["Perl"] += 6
+    elif perl_symbol_count >= 1:
+        scores["Perl"] += 3
+    if tcl_symbol_count >= 2:
+        scores["Tcl"] += 6
+    elif tcl_symbol_count >= 1:
+        scores["Tcl"] += 3
+    if r_symbol_count >= 2:
+        scores["R"] += 6
+    elif r_symbol_count >= 1:
+        scores["R"] += 3
+    if objc_symbol_count >= 2:
+        scores["Objective-C"] += 7
+    elif objc_symbol_count >= 1:
+        scores["Objective-C"] += 3

@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.8.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,31 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.9.0
+
+- Added external-tool integration exports for well-known reverse-engineering and binary-inspection tools:
+  - Binary Ninja Python script export
+  - Ghidra Python script export
+  - IDAPython script export
+  - radare2 command script export
+  - Cutter/Rizin command script export
+  - ImHex CSV memory/section map export
+- Added CLI integration controls:
+  - `--list-tool-plugins`
+  - `--tool-plugin-format <format>`
+  - `--tool-plugin-export [path]`
+- Expanded Textual UX integration surface:
+  - report viewer now includes an `Integrations` tab
+  - command-palette export actions for every supported tool format
+  - workspace commands `tool-list` and `tool-export <format> [path]`
+- Expanded language heuristics:
+  - `Objective-C`, `Ruby`, `Perl`, `Tcl`, `R`
+- Expanded compiler/assembler heuristics:
+  - `FreePascal`, `DMD`, `GNAT`, `GFortran`, `YASM`
+- Expanded build-system heuristics:
+  - `Waf`, `QMake`, `Premake`, `Cabal`, `Stack`, `Nix`, `Arduino`
+- Extended Markdown/PDF/plain reports to surface available tool integrations and default export targets.
 
 ## What Changed in 0.8.0
 
@@ -130,15 +155,15 @@
 
 ### Languages
 
-`ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
+`ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `Objective-C`, `Ruby`, `Perl`, `Tcl`, `R`, `SageLang`
 
 ### Compilers/Assemblers
 
-`GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
+`GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `FreePascal`, `DMD`, `GNAT`, `GFortran`, `NASM`, `FASM`, `MASM`, `TASM`, `YASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
 
 ### Build Systems
 
-`CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Ambiguous: ...`, `Unknown`
+`CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Waf`, `QMake`, `Premake`, `Cabal`, `Stack`, `Nix`, `Arduino`, `Ambiguous: ...`, `Unknown`
 
 ### Artifact Types
 
@@ -177,14 +202,15 @@ Current false-positive guardrails include:
 - `src/detect/techniques/`: evidence-specific heuristic modules
 - `src/detect/arch/`: architecture-shape heuristics
 - `src/advanced/`: benchmark, explainability, plugin/signature, mixed attribution, firmware fingerprinting, hardening, diff, CI, and RE interop
+- `src/advanced/toolbridge.py`: external-tool export bridge for Binary Ninja, Ghidra, IDA, radare2/Cutter, and ImHex
 - `src/info/elfinfo.py`: metadata printers (`general`, `important`, `detailed`)
 - `src/symbols/elfsymbols.py`: symbol-driven heuristic scoring
 - `src/uf2/`: UF2 parsing and UF2-backed firmware scanning
 - `src/baremetal/`: Intel HEX, S-record, and raw firmware scanners
 - `src/elfarchive/`: GNU ar archive scanners for ELF member aggregation
 - `src/settings.py`: JSON settings loader/saver
-- `src/ui/textual_report.py`: Textual report viewer
-- `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode)
+- `src/ui/textual_report.py`: Textual report viewer with integrations tab and export palette actions
+- `src/ui/textual_workspace.py`: Textual workspace UX (no-arg interactive mode, plus tool export commands)
 - `src/ui/textual_editor.py`: split-pane Textual editor workbench (interactive hex selection, raw preview, synchronized disassembly highlighting)
 - `src/ui/textual_diff.py`: dedicated Textual diff screen for side-by-side classification/evidence deltas
 - `src/edit/elf_editor.py`: safe in-memory ELF header editor + disassembler-aligned file-offset/VA mapping utilities
@@ -262,6 +288,9 @@ Core options:
 - `--re-export <path.json>`
 - `--re-export-format generic|ghidra|ida|rizin`
 - `--re-merge-policy union|prefer-import|prefer-scan`
+- `--list-tool-plugins`
+- `--tool-plugin-format binaryninja|ghidra|ida-python|radare2|cutter|imhex`
+- `--tool-plugin-export [path-or-dir]`
 - `--version`
 
 Examples:
@@ -290,6 +319,10 @@ python3 src/elfscan.py --install-signature-pack rules/custom-pack.json --signatu
 python3 src/elfscan.py --update-signatures https://example.com/elfexplorer-signatures.json
 python3 src/elfscan.py --list-signature-packs
 python3 src/elfscan.py test-bin/x86_64/hello_c --re-import re-notes.json --re-export reports/re-export.json --re-export-format ghidra
+python3 src/elfscan.py --list-tool-plugins
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format ghidra --tool-plugin-export
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format binaryninja --tool-plugin-export reports/hello_c-bn.py
+python3 src/elfscan.py --crawl test-bin --tool-plugin-format imhex --tool-plugin-export reports/imhex-maps
 ```
 
 ## Textual Workspace (Default UX)
@@ -305,6 +338,7 @@ The workspace supports:
 - crawling (`crawl <dir> [mode] [recursive:true/false] [max_files]`)
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
+- tool integrations (`tool-list`, `tool-export <format> [path]`)
 - summary display (`show`)
 - advanced ELF editing:
   - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
@@ -374,6 +408,12 @@ Inside the Textual report viewer (`--ui textual` with a file path), use `Ctrl+P`
 Custom report commands include:
 - `Report: Export Markdown`
 - `Report: Export PDF`
+- `Integrations: Export Binary Ninja Script`
+- `Integrations: Export Ghidra Script`
+- `Integrations: Export IDA Python Script`
+- `Integrations: Export radare2 Script`
+- `Integrations: Export Cutter/Rizin Script`
+- `Integrations: Export ImHex Memory Map`
 - `Report: Open Editor Workbench`
 - `Report: Rescan Current Mode`
 - `Report: Mode General + Rescan`
@@ -449,6 +489,26 @@ Markdown and PDF outputs include:
 - top score tables
 - artifact evidence
 - captured metadata block
+- tool integration export inventory
+
+Tool plugin/script export:
+
+```bash
+python3 src/elfscan.py --list-tool-plugins
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format ghidra --tool-plugin-export
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format ida-python --tool-plugin-export reports/hello_c-ida.py
+python3 src/elfscan.py --crawl test-bin --tool-plugin-format imhex --tool-plugin-export reports/imhex
+```
+
+Supported integrations:
+- Binary Ninja
+- Ghidra
+- IDA Pro
+- radare2
+- Cutter/Rizin
+- ImHex
+
+For multi-report runs, `--tool-plugin-export` should be omitted or pointed at a directory so ELFexplorer can emit one integration file per report.
 
 ## Testing
 
@@ -497,16 +557,17 @@ Useful next steps to increase precision further:
 
 High-value additions:
 - languages: `Zig`/`Nim` corpus coverage across all arches, `V`, `Odin`, `Pascal/FreePascal` corpus expansion, `Erlang/Elixir NIF hosts`
-- compilers/toolchains: `MSVC (ELF cross-host traces)`, `PCC`, `DMD`, `GNAT variants`
-- assemblers: `YASM`, `GNU as` profile split from generic GCC paths
-- build systems: `QMake`, `Waf`, `Premake`, `Bazel`/`Buck2` confidence refinement, BSP-layer attribution over detected SDK/toolchain
+- compilers/toolchains: `MSVC (ELF cross-host traces)`, `PCC`, `GNU as` profile split from GCC, `clang-cl` cross-toolchain traces
+- assemblers: deeper `GNU as` vs compiler-driver differentiation, macro package detection
+- build systems: `Bazel`/`Buck2` confidence refinement, BSP-layer attribution over detected SDK/toolchain, generator-chain separation (`CMake` -> `Ninja` vs `CMake` -> `Make`)
+- integrations: bidirectional import/export with Binary Ninja, Ghidra, IDA, radare2/Cutter, and richer ImHex pattern generation
 
 See [`ELFexplored_Guide.md`](ELFexplored_Guide.md) for method-level details and extension strategy.
 
 ## Versioning
 
 - Canonical version source: [`VERSION`](VERSION)
-- Current version: `0.6.0`
+- Current version: `0.9.0`
 - CLI check:
 
 ```bash

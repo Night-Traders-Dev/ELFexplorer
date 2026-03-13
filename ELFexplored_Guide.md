@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.8.0` (see `VERSION`).
+Current release: `0.9.0` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -75,6 +75,7 @@ Outputs are available as:
 - Textual workspace advanced ELF edit mode (in-memory header mutation + save/revert)
 - Markdown export
 - PDF export
+- external-tool integration export (Binary Ninja, Ghidra, IDA, radare2/Cutter, ImHex)
 
 ## 3. Repository Architecture
 
@@ -117,6 +118,7 @@ Outputs are available as:
   - cross-binary diff model/rendering
   - CI policy evaluation
   - reverse-engineering import/export interop + merge policies
+  - external-tool bridge for disassemblers/memory tools
 - `src/detect/techniques/`
   - technique modules grouped by evidence type
 - `src/detect/techniques/artifact.py`
@@ -184,7 +186,7 @@ Example dimensions:
 ## 5. Language Detection Coverage
 
 Current labels:
-- `ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `SageLang`
+- `ASM`, `C`, `C++`, `C#`, `Rust`, `Go`, `Dart`, `Kotlin/Native`, `Pascal`, `Crystal`, `D`, `Ada`, `Fortran`, `Nim`, `Zig`, `Haskell`, `OCaml`, `Julia`, `Lua`, `Swift`, `Java`, `Python`, `Objective-C`, `Ruby`, `Perl`, `Tcl`, `R`, `SageLang`
 
 ### 5.1 High-value language cues
 
@@ -198,13 +200,18 @@ Current labels:
 - Pascal: FreePascal-style `fpc_*` runtime markers and Pascal DWARF language tags
 - Crystal: Crystal runtime entry patterns and DWARF Crystal language tags
 - Nim/Zig: runtime/toolchain symbol and comment markers
+- Objective-C: `objc_*/OBJC_*` runtime markers, `libobjc` linkage, GNUstep/runtime support strings
+- Ruby: `ruby_*`, `rb_*`, `libruby` runtime linkage, embedded VM strings
+- Perl: `Perl_*`, `PL_*`, `libperl` runtime linkage
+- Tcl: `Tcl_*`, `Tclp*` API/runtime markers
+- R: `Rf_*`, `R_*`, `libR.so` embedding/runtime markers
 - C#: explicit CLR/Mono host/runtime markers
 - SageLang: generated C pattern (`sagec_<n>.c`) + Sage runtime clusters with anchor checks
 
 ## 6. Compiler/Assembler Detection Coverage
 
 Current labels:
-- `GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `NASM`, `FASM`, `MASM`, `TASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
+- `GCC`, `Clang`, `Intel ICC/ICX`, `TinyCC`, `Rustc`, `Go gc`, `Zig`, `LDC`, `GDC`, `FreePascal`, `DMD`, `GNAT`, `GFortran`, `NASM`, `FASM`, `MASM`, `TASM`, `YASM`, `GHC`, `OCamlopt`, `Ambiguous: ...`, `Unknown`
 
 Evidence sources:
 - `.comment`
@@ -213,12 +220,12 @@ Evidence sources:
 - toolchain-specific symbol families
 - runtime dependency signals
 
-Assembler family detection for ELF currently recognizes NASM/FASM/MASM/TASM marker families when present in producer/comment/debug contexts.
+Assembler family detection for ELF currently recognizes NASM/FASM/MASM/TASM/YASM marker families when present in producer/comment/debug contexts.
 
 ## 7. Build-System Detection Coverage
 
 Current labels:
-- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Ambiguous: ...`, `Unknown`
+- `CMake`, `Meson`, `Bazel`, `Cargo`, `Ninja`, `Make`, `Autotools`, `MSBuild`, `Gradle`, `SCons`, `XMake`, `Buck2`, `Go Toolchain`, `Dart/Flutter`, `Zig Build`, `Pico SDK`, `Buildroot`, `Yocto/OpenEmbedded`, `PlatformIO`, `ESP-IDF`, `Zephyr West`, `Waf`, `QMake`, `Premake`, `Cabal`, `Stack`, `Nix`, `Arduino`, `Ambiguous: ...`, `Unknown`
 
 Evidence sources:
 - path fragments in debug strings
@@ -309,14 +316,29 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - export collection: `--export-collection-md`, `--export-collection-pdf`
 - export diff markdown: `--export-diff-md`
 - export RE payload: `--re-export` (`--re-export-format` supports `generic`, `ghidra`, `ida`, `rizin`)
+- list external-tool export formats: `--list-tool-plugins`
+- select external-tool export format: `--tool-plugin-format binaryninja|ghidra|ida-python|radare2|cutter|imhex`
+- export external-tool plugin/script: `--tool-plugin-export [path-or-dir]`
 - runtime confidence calibration model input: `--calibration-model`
 - RE merge policy control: `--re-merge-policy union|prefer-import|prefer-scan`
+
+External-tool export notes:
+- Binary Ninja / Ghidra / IDA outputs are Python scripts that reapply inferred names and comments.
+- radare2 / Cutter outputs are command scripts that create a dedicated flagspace and attach comments.
+- ImHex output is a CSV memory/section map suitable for visual offset navigation and memory-map review.
+- For multi-report runs, `--tool-plugin-export` should target a directory or be omitted so ELFexplorer can emit one file per report.
 
 ### 10.5 Textual Report Palette
 
 When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
 - Markdown export command
 - PDF export command
+- Binary Ninja export command
+- Ghidra export command
+- IDA Python export command
+- radare2 export command
+- Cutter/Rizin export command
+- ImHex export command
 - editor workbench command (`Report: Open Editor Workbench`)
 - rescan command using current mode
 - mode-switch-and-rescan commands (`general`, `important`, `detailed`)
@@ -367,6 +389,8 @@ Workspace commands:
 - `export-pdf <path>`
 - `export-collection-md <path>`
 - `export-collection-pdf <path>`
+- `tool-list`
+- `tool-export <format> [path]`
 - `diff <other-file> [mode]`
 - `diff-ui <other-file> [mode]`
 - `show`
@@ -627,6 +651,15 @@ Batch crawl + collection export:
 
 ```bash
 python3 src/elfscan.py --crawl test-bin --export-collection-md reports/corpus.md
+```
+
+External-tool plugin/script export:
+
+```bash
+python3 src/elfscan.py --list-tool-plugins
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format ghidra --tool-plugin-export
+python3 src/elfscan.py test-bin/x86_64/hello_c --tool-plugin-format binaryninja --tool-plugin-export reports/hello_c-bn.py
+python3 src/elfscan.py --crawl test-bin --tool-plugin-format imhex --tool-plugin-export reports/imhex
 ```
 
 Task-file batch:

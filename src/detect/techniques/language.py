@@ -9,13 +9,18 @@ from detect.constants import (
     LANGUAGE_STRING_SCAN_SECTIONS,
     LUA_STRING_MARKERS,
     NIM_STRING_MARKERS,
+    OBJC_STRING_MARKERS,
     NOTE_SECTIONS,
     OCAML_STRING_MARKERS,
     PASCAL_STRING_MARKERS,
+    PERL_STRING_MARKERS,
+    R_STRING_MARKERS,
+    RUBY_STRING_MARKERS,
     SAGELANG_GENERATED_C_PATTERN,
     SAGELANG_RUNTIME_STRINGS,
     SAGELANG_STRONG_STRING_MARKERS,
     SAGELANG_TOKEN_PATTERN,
+    TCL_STRING_MARKERS,
     ZIG_STRING_MARKERS,
     ZIG_TOKEN_PATTERN,
 )
@@ -33,6 +38,7 @@ DWARF_LANGUAGE_NAME_MAP = {
     "DW_LANG_C_plus_plus_11": "C++",
     "DW_LANG_C_plus_plus_14": "C++",
     "DW_LANG_C_plus_plus_17": "C++",
+    "DW_LANG_ObjC": "Objective-C",
     "DW_LANG_Rust": "Rust",
     "DW_LANG_Go": "Go",
     "DW_LANG_D": "D",
@@ -63,6 +69,7 @@ DWARF_LANGUAGE_CODE_MAP = {
     0x000C: "DW_LANG_C99",
     0x000E: "DW_LANG_Fortran95",
     0x000F: "DW_LANG_Ada95",
+    0x0010: "DW_LANG_ObjC",
     0x0013: "DW_LANG_D",
     0x0014: "DW_LANG_Python",
     0x0016: "DW_LANG_Go",
@@ -119,6 +126,16 @@ def score_comment_section(elf, scores):
             scores["Julia"] += 3
         if "lua" in data or "luajit" in data:
             scores["Lua"] += 3
+        if "libruby" in data or "ruby_init" in data or "rb_define_method" in data:
+            scores["Ruby"] += 3
+        if "libperl" in data or "perl_construct" in data or "perl_parse" in data:
+            scores["Perl"] += 3
+        if "libtcl" in data or "tcl_main" in data or "tcl_createinterp" in data:
+            scores["Tcl"] += 3
+        if "libr.so" in data or "rf_initembeddedr" in data or "r_inside_r" in data:
+            scores["R"] += 3
+        if "libobjc" in data or "objc_msgsend" in data or "gnustep" in data:
+            scores["Objective-C"] += 3
         if "swift" in data:
             scores["Swift"] += 3
         if "javac" in data or "openjdk" in data:
@@ -190,6 +207,16 @@ def score_dynamic_section(elf, scores):
                 scores["Julia"] += 6
             if "liblua" in needed or "luajit" in needed:
                 scores["Lua"] += 5
+            if "libruby" in needed:
+                scores["Ruby"] += 6
+            if "libperl" in needed:
+                scores["Perl"] += 6
+            if "libtcl" in needed:
+                scores["Tcl"] += 6
+            if needed == "libr.so" or needed.startswith("libr.so.") or needed.startswith("librblas"):
+                scores["R"] += 6
+            if "libobjc" in needed or "gnustep-base" in needed:
+                scores["Objective-C"] += 6
             if "swift" in needed:
                 scores["Swift"] += 3
             if "jvm" in needed or "java" in needed:
@@ -257,6 +284,11 @@ def score_general_language_strings(elf, scores):
     ocaml_markers = set()
     julia_markers = set()
     lua_markers = set()
+    ruby_markers = set()
+    perl_markers = set()
+    tcl_markers = set()
+    r_markers = set()
+    objc_markers = set()
     dart_token_count = 0
     zig_token_count = 0
 
@@ -298,6 +330,21 @@ def score_general_language_strings(elf, scores):
         for marker in LUA_STRING_MARKERS:
             if marker in data:
                 lua_markers.add(marker)
+        for marker in RUBY_STRING_MARKERS:
+            if marker in data:
+                ruby_markers.add(marker)
+        for marker in PERL_STRING_MARKERS:
+            if marker in data:
+                perl_markers.add(marker)
+        for marker in TCL_STRING_MARKERS:
+            if marker in data:
+                tcl_markers.add(marker)
+        for marker in R_STRING_MARKERS:
+            if marker in data:
+                r_markers.add(marker)
+        for marker in OBJC_STRING_MARKERS:
+            if marker in data:
+                objc_markers.add(marker)
 
         dart_token_count += len(DART_TOKEN_PATTERN.findall(data))
         zig_token_count += len(ZIG_TOKEN_PATTERN.findall(data))
@@ -366,6 +413,31 @@ def score_general_language_strings(elf, scores):
         scores["Lua"] += 6
     elif len(lua_markers) >= 1:
         scores["Lua"] += 3
+
+    if len(ruby_markers) >= 2:
+        scores["Ruby"] += 8
+    elif len(ruby_markers) >= 1:
+        scores["Ruby"] += 4
+
+    if len(perl_markers) >= 2:
+        scores["Perl"] += 8
+    elif len(perl_markers) >= 1:
+        scores["Perl"] += 4
+
+    if len(tcl_markers) >= 2:
+        scores["Tcl"] += 8
+    elif len(tcl_markers) >= 1:
+        scores["Tcl"] += 4
+
+    if len(r_markers) >= 2:
+        scores["R"] += 8
+    elif len(r_markers) >= 1:
+        scores["R"] += 4
+
+    if len(objc_markers) >= 2:
+        scores["Objective-C"] += 8
+    elif len(objc_markers) >= 1:
+        scores["Objective-C"] += 4
 
 
 def score_sagelang_strings(elf, scores):

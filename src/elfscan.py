@@ -26,6 +26,7 @@ from advanced.signatures import (
     list_signature_packs,
     update_signature_pack,
 )
+from advanced.toolbridge import list_tool_plugin_formats
 from scancli.args import build_parser
 from scancli.render import display_report, print_collection_summary
 from scancli.scan import build_scan_report
@@ -33,6 +34,7 @@ from scancli.styles import FG_MAGENTA, STYLE_BOLD, styled
 from scancli.workflow import (
     build_scan_options,
     collect_reports_from_args,
+    export_tool_plugins_for_reports,
     handle_no_input,
     save_and_export_collection,
     save_and_export_single,
@@ -89,6 +91,26 @@ def main():
                 print("Installed signature packs:")
                 for item in packs:
                     print(f"  - {item}")
+            if not (
+                args.filepath
+                or args.crawl
+                or args.task_file
+                or args.load_scan
+                or args.load_collection
+                or args.benchmark_manifest
+                or args.benchmark_corpus
+            ):
+                return 0
+
+        if args.list_tool_plugins:
+            formats = list_tool_plugin_formats()
+            print("Supported tool plugin/script exports:")
+            for key in sorted(formats):
+                meta = formats[key]
+                print(
+                    f"  - {key}: {meta.get('label', key)} "
+                    f"({meta.get('extension', '')}) - {meta.get('description', '')}"
+                )
             if not (
                 args.filepath
                 or args.crawl
@@ -168,6 +190,7 @@ def main():
                     print(f"Exported Markdown diff: {out_path}")
 
             save_and_export_single(report, args)
+            export_tool_plugins_for_reports(reports, args)
 
             if args.re_export:
                 exported = export_re_payload(report, args.re_export, export_format=args.re_export_format)
@@ -198,6 +221,7 @@ def main():
                 )
                 print()
         save_and_export_collection(reports, args)
+        export_tool_plugins_for_reports(reports, args)
 
         if args.ci:
             ci_result = evaluate_reports_ci(reports, load_policy(args.policy_file))

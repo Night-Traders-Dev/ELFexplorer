@@ -2,6 +2,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
+from advanced.toolbridge import (
+    default_tool_plugin_path,
+    export_tool_plugin,
+    list_tool_plugin_formats,
+)
 from edit import ElfBinaryEditor, ElfEditError
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
@@ -37,6 +42,16 @@ def _score_rows(scores: Dict[str, int]) -> Iterable[Tuple[str, str]]:
     ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     for label, value in ordered:
         yield label, str(value)
+
+
+def _integration_rows(report: Dict) -> Iterable[Tuple[str, str, str, str]]:
+    for key, meta in sorted(list_tool_plugin_formats().items()):
+        yield (
+            key,
+            meta.get("label", key),
+            meta.get("description", ""),
+            str(default_tool_plugin_path(report, key)),
+        )
 
 
 def default_report_export_path(
@@ -97,6 +112,11 @@ def run_textual_report(report: Dict):
         #evidence {
             padding: 1 2;
         }
+        #integrations_note {
+            height: auto;
+            padding: 1 2;
+            border: round $primary;
+        }
         """
 
         BINDINGS = [
@@ -140,6 +160,9 @@ def run_textual_report(report: Dict):
                     with TabPane("Evidence"):
                         with VerticalScroll(id="evidence_scroll"):
                             yield Static("", id="evidence")
+                    with TabPane("Integrations"):
+                        yield Static("", id="integrations_note")
+                        yield DataTable(id="integrations_table")
             yield Footer()
 
         def get_system_commands(self, screen: Screen):
@@ -153,6 +176,36 @@ def run_textual_report(report: Dict):
                 "Report: Export PDF",
                 "Save current report as PDF in ./reports/",
                 self.action_export_pdf,
+            )
+            yield SystemCommand(
+                "Integrations: Export Binary Ninja Script",
+                "Save Binary Ninja import script in ./reports/",
+                self.action_export_tool_binaryninja,
+            )
+            yield SystemCommand(
+                "Integrations: Export Ghidra Script",
+                "Save Ghidra import script in ./reports/",
+                self.action_export_tool_ghidra,
+            )
+            yield SystemCommand(
+                "Integrations: Export IDA Python Script",
+                "Save IDAPython import script in ./reports/",
+                self.action_export_tool_ida_python,
+            )
+            yield SystemCommand(
+                "Integrations: Export radare2 Script",
+                "Save radare2 import script in ./reports/",
+                self.action_export_tool_radare2,
+            )
+            yield SystemCommand(
+                "Integrations: Export Cutter/Rizin Script",
+                "Save Cutter/Rizin import script in ./reports/",
+                self.action_export_tool_cutter,
+            )
+            yield SystemCommand(
+                "Integrations: Export ImHex Memory Map",
+                "Save ImHex section/symbol CSV in ./reports/",
+                self.action_export_tool_imhex,
             )
             yield SystemCommand(
                 "Report: Rescan Current Mode",
@@ -188,6 +241,19 @@ def run_textual_report(report: Dict):
             for label, value in _score_rows(scores):
                 table.add_row(label, value)
 
+        def _fill_integrations_table(self):
+            note = self.query_one("#integrations_note", Static)
+            table = self.query_one("#integrations_table", DataTable)
+            table.cursor_type = "row"
+            table.clear(columns=True)
+            table.add_columns("Format", "Label", "Description", "Default Export Path")
+            for row in _integration_rows(self.report):
+                table.add_row(*row)
+            note.update(
+                "External-tool exports are generated from the current report's symbols, sections, and "
+                "comments. Use the command palette to export scripts for disassemblers and memory-mapping tools."
+            )
+
         def _refresh_view(self):
             summary = self.query_one("#summary", Static)
             metadata = self.query_one("#metadata", Static)
@@ -209,6 +275,7 @@ def run_textual_report(report: Dict):
             self._fill_table("language_scores", "Language", scan["language_scores"])
             self._fill_table("compiler_scores", "Compiler", scan["compiler_scores"])
             self._fill_table("build_scores", "Build System", scan["build_scores"])
+            self._fill_integrations_table()
 
             evidence_lines = []
             for line in indicators:
@@ -375,11 +442,45 @@ def run_textual_report(report: Dict):
             except Exception as exc:
                 self.notify(f"PDF export failed: {exc}", title="Export", severity="error")
 
+        def _export_tool_plugin(self, tool_format: str):
+            try:
+                target = default_tool_plugin_path(self.report, tool_format)
+                exported = export_tool_plugin(self.report, target, tool_format)
+                self.notify(
+                    f"Saved {tool_format} integration: {exported}",
+                    title="Integrations",
+                    severity="information",
+                )
+            except Exception as exc:
+                self.notify(
+                    f"{tool_format} export failed: {exc}",
+                    title="Integrations",
+                    severity="error",
+                )
+
         def action_export_markdown(self):
             self._export_markdown()
 
         def action_export_pdf(self):
             self._export_pdf()
+
+        def action_export_tool_binaryninja(self):
+            self._export_tool_plugin("binaryninja")
+
+        def action_export_tool_ghidra(self):
+            self._export_tool_plugin("ghidra")
+
+        def action_export_tool_ida_python(self):
+            self._export_tool_plugin("ida-python")
+
+        def action_export_tool_radare2(self):
+            self._export_tool_plugin("radare2")
+
+        def action_export_tool_cutter(self):
+            self._export_tool_plugin("cutter")
+
+        def action_export_tool_imhex(self):
+            self._export_tool_plugin("imhex")
 
         def action_rescan_current_mode(self):
             self._rescan(mode=self.report.get("mode", "general"))

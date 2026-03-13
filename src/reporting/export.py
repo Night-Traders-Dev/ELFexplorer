@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from advanced.toolbridge import default_tool_plugin_path, list_tool_plugin_formats
+
 
 def _top_scores(scores, limit=8):
     ordered = sorted((scores or {}).items(), key=lambda item: item[1], reverse=True)
@@ -149,6 +151,17 @@ def _append_advanced_profiles(lines, scan):
         lines.append(f"- Imported Comments: `{re_merged.get('imported_comment_count', 0)}`")
 
 
+def _append_tool_integrations(lines, report):
+    lines.extend(["", "## Tool Integrations", ""])
+    lines.append("| Format | Label | Description | Default Export Path |")
+    lines.append("| --- | --- | --- | --- |")
+    for key, meta in sorted(list_tool_plugin_formats().items()):
+        lines.append(
+            f"| {key} | {meta.get('label', key)} | {meta.get('description', '')} | "
+            f"`{default_tool_plugin_path(report, key)}` |"
+        )
+
+
 def report_to_markdown(report):
     scan = report.get("scan_result", {})
     artifact = scan.get("artifact_profile", {})
@@ -242,6 +255,7 @@ def report_to_markdown(report):
     _append_explainability(lines, scan)
     lines.append("")
     _append_advanced_profiles(lines, scan)
+    _append_tool_integrations(lines, report)
 
     lines.append("")
     return "\n".join(lines)
@@ -312,6 +326,14 @@ def _summary_table_rows(report):
         ("Linkage Model", artifact.get("linkage_model", "Unknown")),
         ("Loader", artifact.get("loader", "None")),
     ]
+
+
+def _tool_integration_rows(report):
+    rows = [["Format", "Label", "Description"]]
+    for key, meta in sorted(list_tool_plugin_formats().items()):
+        rows.append([key, meta.get("label", key), meta.get("description", "")])
+    rows.append(["Default Export Base", str(default_tool_plugin_path(report, "ghidra").parent), "reports directory"])
+    return rows
 
 
 def _render_report_pdf(report, path):
@@ -394,6 +416,23 @@ def _render_report_pdf(report, path):
     metadata = report.get("metadata_text", "").strip()
     story.append(Paragraph("ELF Metadata", styles["Heading3"]))
     story.append(Preformatted(metadata or "No metadata captured.", styles["Code"]))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Tool Integrations", styles["Heading3"]))
+    integration_rows = _tool_integration_rows(report)
+    integration_table = Table(integration_rows, colWidths=[90, 150, 290])
+    integration_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1d4ed8")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eff6ff")]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    story.append(integration_table)
     doc.build(story)
     return out_path
 
@@ -487,6 +526,24 @@ def _render_collection_pdf(collection_payload, path):
             )
         )
         story.append(table)
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Tool Integrations", styles["Heading3"]))
+        integration_rows = _tool_integration_rows(report)
+        integration_table = Table(integration_rows, colWidths=[90, 150, 290])
+        integration_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1d4ed8")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eff6ff")]),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(integration_table)
         story.append(Spacer(1, 8))
 
         story.append(Paragraph("Top Language Scores", styles["Heading3"]))

@@ -61,6 +61,20 @@ def score_build_system_symbols(elf, scores):
 
     if any("platformio" in name for name in symbols):
         scores["PlatformIO"] += 3
+    if any("waf" in name or "waflib" in name for name in symbols):
+        scores["Waf"] += 3
+    if any("qmake" in name for name in symbols):
+        scores["QMake"] += 3
+    if any("premake" in name for name in symbols):
+        scores["Premake"] += 3
+    if any("cabal" in name for name in symbols):
+        scores["Cabal"] += 3
+    if any("stack_" in name or "stack" == name for name in symbols):
+        scores["Stack"] += 3
+    if any("nix" in name and "unix" not in name for name in symbols):
+        scores["Nix"] += 2
+    if any("arduino" in name or "setup" == name for name in symbols):
+        scores["Arduino"] += 3
     if any("zephyr" in name or name.startswith("z_impl_") for name in symbols):
         scores["Zephyr West"] += 3
     if any("esp_" in name or "idf_" in name for name in symbols):
@@ -116,6 +130,20 @@ def score_build_system_dwarf_paths(elf, scores):
                 scores["Cargo"] += 4
             if "build.ninja" in path:
                 scores["Ninja"] += 4
+            if "waf-" in path or "waflib" in path or path.endswith("/wscript"):
+                scores["Waf"] += 5
+            if ".qmake.stash" in path or "mkspecs/" in path or path.endswith(".pro"):
+                scores["QMake"] += 5
+            if "premake5.lua" in path or "premake4.lua" in path or "/.premake/" in path:
+                scores["Premake"] += 5
+            if "dist-newstyle/" in path or path.endswith(".cabal") or "cabal.project" in path:
+                scores["Cabal"] += 5
+            if ".stack-work/" in path or "stack.yaml" in path:
+                scores["Stack"] += 5
+            if "/nix/store/" in path or path.endswith("flake.nix") or path.endswith("default.nix"):
+                scores["Nix"] += 5
+            if "arduino" in path or path.endswith(".ino") or "sketch/" in path:
+                scores["Arduino"] += 5
             if "output/build/" in path or "buildroot" in path:
                 scores["Buildroot"] += 6
             if "tmp/work/" in path or "tmp/work-shared/" in path or "poky" in path:

@@ -4,6 +4,7 @@ SUPPORTED_LANGUAGES = (
     "ASM",
     "C",
     "C++",
+    "Objective-C",
     "C#",
     "Rust",
     "Go",
@@ -20,6 +21,10 @@ SUPPORTED_LANGUAGES = (
     "OCaml",
     "Julia",
     "Lua",
+    "Ruby",
+    "Perl",
+    "Tcl",
+    "R",
     "Swift",
     "Java",
     "Python",
@@ -33,6 +38,11 @@ NOTE_SECTIONS = {
     ".note.nim": "Nim",
     ".note.kotlin.native": "Kotlin/Native",
     ".note.crystal": "Crystal",
+    ".note.objc": "Objective-C",
+    ".note.ruby": "Ruby",
+    ".note.perl": "Perl",
+    ".note.tcl": "Tcl",
+    ".note.r.language": "R",
     ".note.swift": "Swift",
     ".note.java": "Java",
     ".note.python": "Python",
@@ -49,6 +59,13 @@ BUILD_SYSTEM_HEURISTICS = (
     "Autotools",
     "MSBuild",
     "Gradle",
+    "Waf",
+    "QMake",
+    "Premake",
+    "Cabal",
+    "Stack",
+    "Nix",
+    "Arduino",
     "SCons",
     "XMake",
     "Buck2",
@@ -214,16 +231,61 @@ LUA_STRING_MARKERS = (
     b"luajit",
 )
 
+RUBY_STRING_MARKERS = (
+    b"libruby",
+    b"ruby_init",
+    b"ruby_run_node",
+    b"rb_funcall",
+    b"rb_define_method",
+)
+
+PERL_STRING_MARKERS = (
+    b"libperl",
+    b"perl_alloc",
+    b"perl_construct",
+    b"perl_parse",
+    b"perl_run",
+)
+
+TCL_STRING_MARKERS = (
+    b"libtcl",
+    b"tcl_main",
+    b"tcl_createinterp",
+    b"tcl_init",
+    b"tcl_eval",
+)
+
+R_STRING_MARKERS = (
+    b"libr.so",
+    b"rf_initembeddedr",
+    b"rf_endembeddedr",
+    b"r_inside_r",
+    b"rprintf",
+)
+
+OBJC_STRING_MARKERS = (
+    b"libobjc",
+    b"objc_msgsend",
+    b"objc_msg_lookup",
+    b"__objc_exec_class",
+    b"gnustep",
+)
+
 COMPILER_HEURISTICS = (
     "GCC",
     "Clang",
     "Intel ICC/ICX",
     "TinyCC",
+    "FreePascal",
+    "DMD",
+    "GNAT",
+    "GFortran",
     "Rustc",
     "Go gc",
     "Zig",
     "LDC",
     "GDC",
+    "YASM",
     "NASM",
     "FASM",
     "MASM",
@@ -263,6 +325,30 @@ COMPILER_TINYCC_STRING_MARKERS = (
     b"tiny c compiler",
     b"tinycc",
     b" tcc ",
+)
+
+COMPILER_FREEPASCAL_STRING_MARKERS = (
+    b"free pascal compiler",
+    b"freepascal",
+    b"fpc ",
+)
+
+COMPILER_DMD_STRING_MARKERS = (
+    b"digital mars d",
+    b" dmd ",
+    b"dmd v",
+)
+
+COMPILER_GNAT_STRING_MARKERS = (
+    b"gnat ",
+    b"gnu ada",
+    b"gnatbind",
+)
+
+COMPILER_GFORTRAN_STRING_MARKERS = (
+    b"gfortran",
+    b"gnu fortran",
+    b"libgfortran",
 )
 
 COMPILER_RUSTC_STRING_MARKERS = (
@@ -328,6 +414,12 @@ COMPILER_TASM_STRING_MARKERS = (
     b"tasm32",
 )
 
+COMPILER_YASM_STRING_MARKERS = (
+    b"yasm",
+    b"yasm version",
+    b"yet another assembler",
+)
+
 COMPILER_CLANG_SYMBOL_MARKERS = (
     "__clang_call_terminate",
     "___clang_call_terminate",
@@ -353,6 +445,29 @@ COMPILER_TINYCC_SYMBOL_MARKERS = (
     "__bound_ptr_add",
     "__bound_ptr_indir1",
     "__bound_ptr_indir4",
+)
+
+COMPILER_FREEPASCAL_SYMBOL_MARKERS = (
+    "fpc_",
+    "__fpc_",
+    "system_$$_",
+)
+
+COMPILER_DMD_SYMBOL_MARKERS = (
+    "_dmain",
+    "_dmodule_ref",
+    "__dmd_",
+)
+
+COMPILER_GNAT_SYMBOL_MARKERS = (
+    "ada__",
+    "__gnat_",
+    "system__",
+)
+
+COMPILER_GFORTRAN_SYMBOL_MARKERS = (
+    "_gfortran",
+    "__gfortran",
 )
 
 COMPILER_RUSTC_SYMBOL_MARKERS = (
@@ -416,6 +531,11 @@ COMPILER_TASM_SYMBOL_MARKERS = (
     "tasm_",
 )
 
+COMPILER_YASM_SYMBOL_MARKERS = (
+    "__yasm",
+    "yasm_",
+)
+
 BUILD_SYSTEM_MARKERS = {
     "CMake": (
         b"/cmakefiles/",
@@ -461,6 +581,42 @@ BUILD_SYSTEM_MARKERS = {
         b"/.gradle/",
         b"build.gradle",
         b"gradle/wrapper",
+    ),
+    "Waf": (
+        b"wscript",
+        b"waflib",
+        b"/.waf",
+    ),
+    "QMake": (
+        b".qmake.stash",
+        b"mkspecs/",
+        b".pro.user",
+    ),
+    "Premake": (
+        b"premake5.lua",
+        b"premake4.lua",
+        b"/.premake/",
+    ),
+    "Cabal": (
+        b"dist-newstyle/",
+        b"cabal.project",
+        b".cabal",
+    ),
+    "Stack": (
+        b"stack.yaml",
+        b".stack-work/",
+        b"stack snapshot",
+    ),
+    "Nix": (
+        b"/nix/store/",
+        b"flake.nix",
+        b"default.nix",
+    ),
+    "Arduino": (
+        b"arduino",
+        b"sketch.ino",
+        b"platform.txt",
+        b"boards.txt",
     ),
     "SCons": (
         b"sconstruct",

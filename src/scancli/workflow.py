@@ -4,6 +4,11 @@ from advanced.calibration import load_calibration_model
 from advanced.plugins import load_rule_pack, merge_rule_packs
 from advanced.reinterop import load_re_annotations
 from advanced.signatures import load_active_signature_pack
+from advanced.toolbridge import (
+    default_tool_plugin_path,
+    export_tool_plugin,
+    list_tool_plugin_formats,
+)
 from reporting.export import (
     export_collection_markdown,
     export_collection_pdf,
@@ -113,6 +118,52 @@ def save_and_export_collection(reports, args):
         print(f"Exported PDF collection: {pdf_path}")
 
 
+def export_tool_plugins_for_reports(reports, args):
+    if getattr(args, "tool_plugin_export", None) is None:
+        return []
+    if not reports:
+        return []
+
+    tool_format = getattr(args, "tool_plugin_format", "ghidra")
+    raw_target = args.tool_plugin_export
+    explicit_target = None if raw_target in (None, "") else Path(raw_target).expanduser()
+
+    if len(reports) == 1:
+        report = reports[0]
+        if explicit_target is None:
+            target_path = default_tool_plugin_path(report, tool_format)
+        elif explicit_target.exists() and explicit_target.is_dir():
+            target_path = default_tool_plugin_path(report, tool_format, output_dir=explicit_target)
+        else:
+            target_path = explicit_target
+        exported = export_tool_plugin(report, target_path, tool_format)
+        print(f"Exported {tool_format} plugin/script: {exported}")
+        return [exported]
+
+    if explicit_target is None:
+        output_dir = Path.cwd() / "reports"
+    elif explicit_target.exists():
+        if explicit_target.is_file():
+            raise ValueError(
+                "Tool-plugin export for multiple reports requires a directory path, not a file."
+            )
+        output_dir = explicit_target
+    elif explicit_target.suffix:
+        raise ValueError(
+            "Tool-plugin export for multiple reports requires a directory path or omitted path."
+        )
+    else:
+        output_dir = explicit_target
+
+    exported_paths = []
+    for report in reports:
+        target_path = default_tool_plugin_path(report, tool_format, output_dir=output_dir)
+        exported = export_tool_plugin(report, target_path, tool_format)
+        print(f"Exported {tool_format} plugin/script: {exported}")
+        exported_paths.append(exported)
+    return exported_paths
+
+
 def collect_reports_from_args(args, scan_options=None):
     reports = []
     if scan_options is None:
@@ -183,6 +234,9 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
         "export_report_pdf": export_report_pdf,
         "export_collection_md": export_collection_markdown,
         "export_collection_pdf": export_collection_pdf,
+        "list_tool_plugins": list_tool_plugin_formats,
+        "default_tool_plugin_path": default_tool_plugin_path,
+        "export_tool_plugin": export_tool_plugin,
         "show_report": lambda report: display_report(report, ui_mode=ui_mode, explicit_ui=explicit_ui),
     }
 

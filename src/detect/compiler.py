@@ -39,10 +39,14 @@ def _allowed_compilers_for_language(source_language):
         return None
 
     language_compiler_map = {
-        "ASM": {"GCC", "Clang", "Intel ICC/ICX", "Zig", "NASM", "FASM", "MASM", "TASM"},
+        "ASM": {"GCC", "Clang", "Intel ICC/ICX", "Zig", "YASM", "NASM", "FASM", "MASM", "TASM"},
         "C": {"GCC", "Clang", "Intel ICC/ICX", "TinyCC", "Zig"},
         "C++": {"GCC", "Clang", "Intel ICC/ICX", "TinyCC", "Zig"},
-        "D": {"LDC", "GDC"},
+        "Objective-C": {"GCC", "Clang"},
+        "D": {"LDC", "GDC", "DMD"},
+        "Ada": {"GNAT"},
+        "Fortran": {"GFortran"},
+        "Pascal": {"FreePascal"},
         "Rust": {"Rustc"},
         "Go": {"Go gc"},
         "Zig": {"Zig"},

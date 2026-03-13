@@ -1,5 +1,6 @@
 import os
 
+from advanced.toolbridge import list_tool_plugin_formats
 from version import get_version
 
 from .styles import (
@@ -105,6 +106,14 @@ def print_plain_report(report, show_explain=False):
 
     print(rule("Binary Metadata", FG_CYAN))
     print(report.get("metadata_text", "").rstrip())
+    print()
+    print(rule("Tool Integrations", FG_YELLOW))
+    print("External-tool exports available from this report:")
+    for key, meta in sorted(list_tool_plugin_formats().items()):
+        print(
+            f"  - {key}: {meta.get('label', key)} "
+            f"({meta.get('extension', '')})"
+        )
     if show_explain:
         print()
         print(rule("Explainability", FG_YELLOW))

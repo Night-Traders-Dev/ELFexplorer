@@ -1,14 +1,22 @@
 from detect.constants import (
     COMPILER_CLANG_STRING_MARKERS,
     COMPILER_CLANG_SYMBOL_MARKERS,
+    COMPILER_DMD_STRING_MARKERS,
+    COMPILER_DMD_SYMBOL_MARKERS,
     COMPILER_GDC_STRING_MARKERS,
     COMPILER_GDC_SYMBOL_MARKERS,
+    COMPILER_GFORTRAN_STRING_MARKERS,
+    COMPILER_GFORTRAN_SYMBOL_MARKERS,
     COMPILER_GHC_STRING_MARKERS,
     COMPILER_GHC_SYMBOL_MARKERS,
     COMPILER_GO_STRING_MARKERS,
     COMPILER_GO_SYMBOL_MARKERS,
     COMPILER_GCC_STRING_MARKERS,
     COMPILER_GCC_SYMBOL_MARKERS,
+    COMPILER_GNAT_STRING_MARKERS,
+    COMPILER_GNAT_SYMBOL_MARKERS,
+    COMPILER_FREEPASCAL_STRING_MARKERS,
+    COMPILER_FREEPASCAL_SYMBOL_MARKERS,
     COMPILER_INTEL_STRING_MARKERS,
     COMPILER_INTEL_SYMBOL_MARKERS,
     COMPILER_LDC_STRING_MARKERS,
@@ -28,6 +36,8 @@ from detect.constants import (
     COMPILER_TASM_SYMBOL_MARKERS,
     COMPILER_FASM_STRING_MARKERS,
     COMPILER_FASM_SYMBOL_MARKERS,
+    COMPILER_YASM_STRING_MARKERS,
+    COMPILER_YASM_SYMBOL_MARKERS,
     COMPILER_ZIG_STRING_MARKERS,
     COMPILER_ZIG_SYMBOL_MARKERS,
 )
@@ -47,6 +57,8 @@ def score_compiler_sections(elf, compiler_scores):
         compiler_scores["Go gc"] += 8
     if ".note.rustc" in section_names:
         compiler_scores["Rustc"] += 8
+    if ".note.yasm" in section_names or ".yasm" in section_names:
+        compiler_scores["YASM"] += 5
     if ".note.nasm" in section_names or ".nasm" in section_names:
         compiler_scores["NASM"] += 5
     if ".note.fasm" in section_names or ".fasm" in section_names:
@@ -62,11 +74,16 @@ def score_compiler_strings(elf, compiler_scores):
     gcc_hits = 0
     intel_hits = 0
     tinycc_hits = 0
+    freepascal_hits = 0
+    dmd_hits = 0
+    gnat_hits = 0
+    gfortran_hits = 0
     rustc_hits = 0
     go_hits = 0
     zig_hits = 0
     ldc_hits = 0
     gdc_hits = 0
+    yasm_hits = 0
     nasm_hits = 0
     fasm_hits = 0
     masm_hits = 0
@@ -91,6 +108,18 @@ def score_compiler_strings(elf, compiler_scores):
         for marker in COMPILER_TINYCC_STRING_MARKERS:
             if marker in data:
                 tinycc_hits += 1
+        for marker in COMPILER_FREEPASCAL_STRING_MARKERS:
+            if marker in data:
+                freepascal_hits += 1
+        for marker in COMPILER_DMD_STRING_MARKERS:
+            if marker in data:
+                dmd_hits += 1
+        for marker in COMPILER_GNAT_STRING_MARKERS:
+            if marker in data:
+                gnat_hits += 1
+        for marker in COMPILER_GFORTRAN_STRING_MARKERS:
+            if marker in data:
+                gfortran_hits += 1
         for marker in COMPILER_RUSTC_STRING_MARKERS:
             if marker in data:
                 rustc_hits += 1
@@ -106,6 +135,9 @@ def score_compiler_strings(elf, compiler_scores):
         for marker in COMPILER_GDC_STRING_MARKERS:
             if marker in data:
                 gdc_hits += 1
+        for marker in COMPILER_YASM_STRING_MARKERS:
+            if marker in data:
+                yasm_hits += 1
         for marker in COMPILER_NASM_STRING_MARKERS:
             if marker in data:
                 nasm_hits += 1
@@ -145,6 +177,26 @@ def score_compiler_strings(elf, compiler_scores):
     elif tinycc_hits >= 1:
         compiler_scores["TinyCC"] += 5
 
+    if freepascal_hits >= 2:
+        compiler_scores["FreePascal"] += 10
+    elif freepascal_hits >= 1:
+        compiler_scores["FreePascal"] += 5
+
+    if dmd_hits >= 2:
+        compiler_scores["DMD"] += 9
+    elif dmd_hits >= 1:
+        compiler_scores["DMD"] += 5
+
+    if gnat_hits >= 2:
+        compiler_scores["GNAT"] += 9
+    elif gnat_hits >= 1:
+        compiler_scores["GNAT"] += 5
+
+    if gfortran_hits >= 2:
+        compiler_scores["GFortran"] += 9
+    elif gfortran_hits >= 1:
+        compiler_scores["GFortran"] += 5
+
     if rustc_hits >= 3:
         compiler_scores["Rustc"] += 10
     elif rustc_hits >= 1:
@@ -169,6 +221,11 @@ def score_compiler_strings(elf, compiler_scores):
         compiler_scores["GDC"] += 8
     elif gdc_hits >= 1:
         compiler_scores["GDC"] += 4
+
+    if yasm_hits >= 2:
+        compiler_scores["YASM"] += 8
+    elif yasm_hits >= 1:
+        compiler_scores["YASM"] += 4
 
     if nasm_hits >= 2:
         compiler_scores["NASM"] += 8
@@ -227,6 +284,14 @@ def score_compiler_dwarf_producer(elf, compiler_scores):
                 compiler_scores["Intel ICC/ICX"] += 10
             if "tiny c compiler" in value or value.startswith("tcc"):
                 compiler_scores["TinyCC"] += 10
+            if "free pascal compiler" in value or "freepascal" in value or "fpc" in value:
+                compiler_scores["FreePascal"] += 10
+            if "digital mars d" in value or value.startswith("dmd"):
+                compiler_scores["DMD"] += 10
+            if "gnat" in value or "gnu ada" in value:
+                compiler_scores["GNAT"] += 10
+            if "gfortran" in value or "gnu fortran" in value:
+                compiler_scores["GFortran"] += 10
             if "rustc" in value:
                 compiler_scores["Rustc"] += 10
             if "go cmd/compile" in value or "golang" in value:
@@ -237,6 +302,8 @@ def score_compiler_dwarf_producer(elf, compiler_scores):
                 compiler_scores["LDC"] += 8
             if "gdc" in value or "gnu d compiler" in value:
                 compiler_scores["GDC"] += 8
+            if "yasm" in value or "yet another assembler" in value:
+                compiler_scores["YASM"] += 8
             if "nasm" in value or "netwide assembler" in value:
                 compiler_scores["NASM"] += 8
             if "fasm" in value or "flat assembler" in value:
@@ -272,6 +339,18 @@ def score_compiler_symbols(elf, compiler_scores):
     if any(marker in name for marker in COMPILER_TINYCC_SYMBOL_MARKERS for name in symbols):
         compiler_scores["TinyCC"] += 5
 
+    if any(marker in name for marker in COMPILER_FREEPASCAL_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["FreePascal"] += 5
+
+    if any(marker in name for marker in COMPILER_DMD_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["DMD"] += 5
+
+    if any(marker in name for marker in COMPILER_GNAT_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["GNAT"] += 5
+
+    if any(marker in name for marker in COMPILER_GFORTRAN_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["GFortran"] += 5
+
     if any(marker in name for marker in COMPILER_RUSTC_SYMBOL_MARKERS for name in symbols):
         compiler_scores["Rustc"] += 5
 
@@ -286,6 +365,9 @@ def score_compiler_symbols(elf, compiler_scores):
 
     if any(marker in name for marker in COMPILER_GDC_SYMBOL_MARKERS for name in symbols):
         compiler_scores["GDC"] += 4
+
+    if any(marker in name for marker in COMPILER_YASM_SYMBOL_MARKERS for name in symbols):
+        compiler_scores["YASM"] += 5
 
     if any(marker in name for marker in COMPILER_NASM_SYMBOL_MARKERS for name in symbols):
         compiler_scores["NASM"] += 5
@@ -322,6 +404,12 @@ def score_compiler_dynamic_libs(elf, compiler_scores):
             compiler_scores["GCC"] += 4
         if "libstdc++" in needed:
             compiler_scores["GCC"] += 2
+        if "libfpc" in needed:
+            compiler_scores["FreePascal"] += 6
+        if "libgnat" in needed:
+            compiler_scores["GNAT"] += 6
+        if "libgfortran" in needed:
+            compiler_scores["GFortran"] += 6
         if "libirc" in needed or "libimf" in needed or "libintlc" in needed:
             compiler_scores["Intel ICC/ICX"] += 4
         if "libhsrts" in needed:
@@ -330,6 +418,8 @@ def score_compiler_dynamic_libs(elf, compiler_scores):
             compiler_scores["OCamlopt"] += 6
         if "libzig" in needed:
             compiler_scores["Zig"] += 4
+        if "libphobos" in needed:
+            compiler_scores["DMD"] += 2
         if "libphobos" in needed:
             compiler_scores["LDC"] += 3
             compiler_scores["GDC"] += 3
