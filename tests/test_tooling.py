@@ -161,6 +161,37 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(result["download_url"], "https://example.invalid/ghidra.zip")
         self.assertIn("ghidra.zip", result["download_path"])
 
+    def test_download_external_tool_dry_run_emits_progress_events(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        spec = {
+            "filename": "ghidra.zip",
+            "url": "https://example.invalid/ghidra.zip",
+            "install_mode": "zip-extract",
+        }
+        events = []
+        with mock.patch("advanced.tooling._resolve_download_spec", return_value=spec), mock.patch(
+            "advanced.tooling.shutil.which",
+            return_value=None,
+        ):
+            tooling.download_external_tool(
+                "ghidra",
+                dry_run=True,
+                environment=environment,
+                event_cb=events.append,
+            )
+
+        self.assertGreaterEqual(len(events), 2)
+        self.assertEqual(events[-1]["kind"], "progress")
+        self.assertEqual(events[-1]["progress"], 100.0)
+        self.assertIn("download into", events[-1]["message"])
+
     def test_install_external_tool_prefers_portable_on_rootless_when_supported(self):
         environment = {
             "os": "linux",
@@ -187,6 +218,9 @@ class ToolingTests(unittest.TestCase):
             "advanced.tooling.os.geteuid",
             return_value=1000,
         ), mock.patch(
+            "advanced.tooling._find_tool_path",
+            return_value=None,
+        ), mock.patch(
             "advanced.tooling._install_portable_tool",
             return_value=portable_result,
         ) as portable_install:
@@ -195,6 +229,78 @@ class ToolingTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["portable"])
         portable_install.assert_called_once()
+
+    def test_install_external_tool_dry_run_emits_progress_events(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "package_managers": ["apt"],
+            "primary_package_manager": "apt",
+            "primary_package_manager_label": "APT",
+        }
+        events = []
+
+        def fake_which(name):
+            if name == "sudo":
+                return "/usr/bin/sudo"
+            return None
+
+        with mock.patch("advanced.tooling.shutil.which", side_effect=fake_which), mock.patch(
+            "advanced.tooling.os.geteuid",
+            return_value=1000,
+        ):
+            result = tooling.install_external_tool(
+                "radare2",
+                dry_run=True,
+                environment=environment,
+                event_cb=events.append,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(events[-1]["kind"], "progress")
+        self.assertEqual(events[-1]["progress"], 100.0)
+        self.assertIn("apt-get install", events[-1]["message"])
+
+    def test_collect_external_tool_status_handles_probe_failures(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": ["apt"],
+            "primary_package_manager": "apt",
+            "primary_package_manager_label": "APT",
+        }
+
+        def fake_status(tool_key, environment=None):
+            meta = tooling.THIRD_PARTY_TOOLS[tool_key]
+            if tool_key == "ghidra":
+                raise RuntimeError("probe boom")
+            return {
+                "key": tool_key,
+                "label": meta["label"],
+                "installed": False,
+                "path": None,
+                "detected_via": None,
+                "version": None,
+                "install_supported": False,
+                "install_manager": None,
+                "install_manager_label": None,
+                "install_command": None,
+                "manual_install": meta.get("manual_install"),
+                "homepage": meta.get("homepage"),
+                "download_url": meta.get("download_url"),
+                "download_supported": False,
+                "portable_install_supported": False,
+                "local_tool_root": "/tmp/tools",
+                "local_bin_root": "/tmp/bin",
+            }
+
+        with mock.patch("advanced.tooling.get_external_tool_status", side_effect=fake_status):
+            snapshot = tooling.collect_external_tool_status(environment=environment)
+
+        self.assertEqual(len(snapshot["tools"]), len(tooling.THIRD_PARTY_TOOLS))
+        ghidra = next(item for item in snapshot["tools"] if item["key"] == "ghidra")
+        self.assertIn("Status probe failed", ghidra["manual_install"])
 
 
 if __name__ == "__main__":

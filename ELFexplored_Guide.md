@@ -354,6 +354,15 @@ When running report UI mode (`--ui textual` with a filepath), the Textual comman
 - rescan command using current mode
 - mode-switch-and-rescan commands (`general`, `important`, `detailed`)
 
+Startup/report UX behavior:
+- report mode opens with a startup splash showing the application name, current version, and a determinate progress bar
+- startup checks preload the host-tool snapshot in the background before the integrations panel is fully populated
+- tooling downloads/installs open a dedicated modal window with:
+  - live progress bar
+  - current operation/status line
+  - verbose log of downloads, extraction, wrapper creation, and package-manager output
+  - threaded execution so the Textual application remains responsive
+
 Additional quick bindings in report view:
 - `e` for opening the split-pane editor workbench
 - `r` for rescan current mode
@@ -369,6 +378,7 @@ Current persisted preference:
 Behavior:
 - on Textual app startup (workspace/report), saved theme is loaded and applied if available
 - on theme change, new value is written back to `settings.conf`
+- startup splash is shown after theme application so background checks can run without freezing the UI
 
 ### 10.7 Advanced Analysis Flags
 
@@ -400,6 +410,8 @@ Current behavior:
 - expose all known package-manager install methods for each tool
 - download official release assets or vendor packages when a supported source is known
 - perform one-click user-local installs for tools with portable packages on supported hosts
+- emit structured progress/log events for check, download, and install operations
+- collect tool status in parallel via a thread pool to reduce startup and refresh latency
 - synthesize install commands only when a verified package recipe exists
 - fall back to manual vendor/install guidance for tools that are not safely package-managed on the current host
 
@@ -498,6 +510,11 @@ Format-specific behavior:
 - ELF sessions expose ELF/program/section header mutation commands.
 - UF2 sessions expose UF2 block inspection/export commands.
 - For UF2, the editable byte stream is the reconstructed payload image, while block/container metadata remains available through dedicated UF2 commands.
+
+Workspace UX behavior:
+- workspace mode starts with a splash screen that shows `ELFexplorer <version>` and a progress bar while integrations are checked
+- `tool-status` uses the same background task system instead of blocking the command loop
+- `tool-download` and `tool-install` use a popup task window with live logs and a determinate progress bar
 
 ### 11.2 Split-Pane Editor Workbench
 

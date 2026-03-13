@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import platform
@@ -87,7 +88,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.11.3 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "binaryninja": {
@@ -393,18 +394,103 @@ def _http_request(url, accept=None):
     return urllib.request.Request(url, headers=headers)
 
 
+def _emit_tool_event(event_cb, kind, message, progress=None, **payload):
+    if not event_cb:
+        return
+    event = {"kind": kind, "message": str(message)}
+    if progress is not None:
+        event["progress"] = float(progress)
+    event.update(payload)
+    event_cb(event)
+
+
 def _load_json(url):
     with urllib.request.urlopen(_http_request(url, accept="application/vnd.github+json"), timeout=20) as handle:
         return json.load(handle)
 
 
-def _download_file(url, target_path):
+def _download_file(url, target_path, event_cb=None, progress_range=None):
     target = Path(target_path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
+    start_progress, end_progress = progress_range or (0.0, 100.0)
     with urllib.request.urlopen(_http_request(url), timeout=120) as response:
+        total = 0
+        try:
+            total = int(response.headers.get("Content-Length", "0") or "0")
+        except Exception:
+            total = 0
+        downloaded = 0
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"Downloading {url}",
+            progress=start_progress,
+            total_bytes=total,
+        )
         with target.open("wb") as handle:
-            shutil.copyfileobj(response, handle)
+            while True:
+                chunk = response.read(1024 * 256)
+                if not chunk:
+                    break
+                handle.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    ratio = min(1.0, downloaded / total)
+                    progress = start_progress + ((end_progress - start_progress) * ratio)
+                    _emit_tool_event(
+                        event_cb,
+                        "progress",
+                        f"Downloaded {downloaded}/{total} bytes",
+                        progress=progress,
+                        downloaded_bytes=downloaded,
+                        total_bytes=total,
+                    )
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"Download complete: {target}",
+            progress=end_progress,
+            downloaded_bytes=downloaded,
+            total_bytes=total,
+        )
     return target
+
+
+def _run_logged_subprocess(command, event_cb=None, progress_range=(20.0, 90.0)):
+    start_progress, end_progress = progress_range
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Running command: {' '.join(command)}",
+        progress=start_progress,
+        command=command,
+    )
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    lines = []
+    progress = start_progress
+    step = max(0.2, (end_progress - start_progress) / 100.0)
+    try:
+        if process.stdout is not None:
+            for line in process.stdout:
+                stripped = line.rstrip()
+                lines.append(stripped)
+                progress = min(end_progress, progress + step)
+                _emit_tool_event(
+                    event_cb,
+                    "log",
+                    stripped,
+                    progress=progress,
+                )
+        returncode = process.wait()
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
+    return returncode, "\n".join(lines).strip()
 
 
 def _download_filename_from_url(url):
@@ -594,13 +680,20 @@ def _portable_requires_download_only(spec):
     return spec.get("install_mode") == "download-only"
 
 
-def download_external_tool(tool_key, dry_run=False, environment=None, output_dir=None):
+def download_external_tool(tool_key, dry_run=False, environment=None, output_dir=None, event_cb=None):
     if tool_key not in THIRD_PARTY_TOOLS:
         raise ValueError(f"Unsupported external tool '{tool_key}'.")
     environment = environment or detect_host_environment()
     status = get_external_tool_status(tool_key, environment=environment)
+    _emit_tool_event(event_cb, "log", f"Preparing download for {status['label']}", progress=2.0)
     spec = _resolve_download_spec(tool_key, environment=environment)
     if not spec:
+        _emit_tool_event(
+            event_cb,
+            "log",
+            status.get("manual_install") or "No downloadable package is defined for this tool on this host.",
+            progress=100.0,
+        )
         return {
             "ok": False,
             "changed": False,
@@ -611,7 +704,23 @@ def download_external_tool(tool_key, dry_run=False, environment=None, output_dir
 
     destination_dir = Path(output_dir).expanduser() if output_dir else (LOCAL_DOWNLOADS_ROOT / tool_key)
     archive_path = destination_dir / spec["filename"]
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Resolved package {spec['filename']} from {spec['url']}",
+        progress=10.0,
+        download_url=spec["url"],
+        download_path=str(archive_path),
+    )
     if dry_run:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"Dry run: would download into {archive_path}",
+            progress=100.0,
+            download_url=spec["url"],
+            download_path=str(archive_path),
+        )
         return {
             "ok": True,
             "changed": False,
@@ -622,7 +731,7 @@ def download_external_tool(tool_key, dry_run=False, environment=None, output_dir
             "portable": not _portable_requires_download_only(spec),
         }
 
-    downloaded = _download_file(spec["url"], archive_path)
+    downloaded = _download_file(spec["url"], archive_path, event_cb=event_cb, progress_range=(15.0, 100.0))
     return {
         "ok": True,
         "changed": True,
@@ -634,11 +743,18 @@ def download_external_tool(tool_key, dry_run=False, environment=None, output_dir
     }
 
 
-def _install_portable_tool(tool_key, environment=None, dry_run=False):
+def _install_portable_tool(tool_key, environment=None, dry_run=False, event_cb=None):
     environment = environment or detect_host_environment()
     status = get_external_tool_status(tool_key, environment=environment)
+    _emit_tool_event(event_cb, "log", f"Preparing local install for {status['label']}", progress=2.0)
     spec = _resolve_download_spec(tool_key, environment=environment)
     if not spec:
+        _emit_tool_event(
+            event_cb,
+            "log",
+            status.get("manual_install") or "Portable install is not available on this host.",
+            progress=100.0,
+        )
         return {
             "ok": False,
             "changed": False,
@@ -649,8 +765,23 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False):
 
     install_root = _tool_install_root(tool_key, spec)
     archive_path = (LOCAL_DOWNLOADS_ROOT / tool_key / spec["filename"]).expanduser()
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Install root: {install_root}",
+        progress=8.0,
+        install_path=str(install_root),
+    )
     if _portable_requires_download_only(spec):
         if dry_run:
+            _emit_tool_event(
+                event_cb,
+                "progress",
+                f"Dry run: package download only for {status['label']}",
+                progress=100.0,
+                download_url=spec["url"],
+                download_path=str(archive_path),
+            )
             return {
                 "ok": True,
                 "changed": False,
@@ -660,7 +791,7 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False):
                 "download_path": str(archive_path),
                 "manual_only": True,
             }
-        downloaded = _download_file(spec["url"], archive_path)
+        downloaded = _download_file(spec["url"], archive_path, event_cb=event_cb, progress_range=(15.0, 100.0))
         return {
             "ok": False,
             "changed": True,
@@ -675,6 +806,18 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False):
         }
 
     if dry_run:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            (
+                f"Dry run: would download {spec['filename']} and install it locally under "
+                f"{install_root}"
+            ),
+            progress=100.0,
+            download_url=spec["url"],
+            download_path=str(archive_path),
+            install_path=str(install_root),
+        )
         return {
             "ok": True,
             "changed": False,
@@ -689,21 +832,30 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False):
             "portable": True,
         }
 
-    downloaded = _download_file(spec["url"], archive_path)
+    downloaded = _download_file(spec["url"], archive_path, event_cb=event_cb, progress_range=(10.0, 55.0))
     install_root.mkdir(parents=True, exist_ok=True)
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Installing {status['label']} using mode {spec['install_mode']}",
+        progress=60.0,
+    )
 
     actual_executable = None
     install_mode = spec["install_mode"]
     if install_mode == "zip-extract":
+        _emit_tool_event(event_cb, "log", f"Extracting ZIP archive into {install_root}", progress=68.0)
         with zipfile.ZipFile(downloaded) as archive:
             archive.extractall(install_root)
         actual_executable = _find_first_match(install_root, spec.get("entry_globs", []))
     elif install_mode == "tar-extract":
+        _emit_tool_event(event_cb, "log", f"Extracting tar archive into {install_root}", progress=68.0)
         with tarfile.open(downloaded, mode="r:*") as archive:
             archive.extractall(install_root)
         actual_executable = _find_first_match(install_root, spec.get("entry_globs", []))
     elif install_mode == "appimage":
         binary_path = install_root / spec["filename"]
+        _emit_tool_event(event_cb, "log", f"Copying AppImage into {binary_path}", progress=72.0)
         shutil.copy2(downloaded, binary_path)
         binary_path.chmod(0o755)
         actual_executable = binary_path
@@ -725,7 +877,20 @@ def _install_portable_tool(tool_key, environment=None, dry_run=False):
             "install_path": str(install_root),
         }
 
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Creating local launcher wrappers for {actual_executable}",
+        progress=88.0,
+    )
     wrappers = _write_wrapper(tool_key, actual_executable)
+    _emit_tool_event(
+        event_cb,
+        "progress",
+        f"Installed {status['label']} locally",
+        progress=100.0,
+        install_path=str(install_root),
+    )
     return {
         "ok": True,
         "changed": True,
@@ -861,7 +1026,39 @@ def render_external_tool_detail_lines(tool_key, environment=None):
 
 def collect_external_tool_status(environment=None):
     environment = environment or detect_host_environment()
-    tools = [get_external_tool_status(tool_key, environment=environment) for tool_key in THIRD_PARTY_TOOLS]
+    tool_keys = list(THIRD_PARTY_TOOLS)
+    max_workers = min(4, max(1, len(tool_keys)))
+    indexed = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(get_external_tool_status, tool_key, environment=environment): (index, tool_key)
+            for index, tool_key in enumerate(tool_keys)
+        }
+        for future, (index, tool_key) in futures.items():
+            try:
+                indexed[index] = future.result()
+            except Exception as exc:
+                meta = THIRD_PARTY_TOOLS[tool_key]
+                indexed[index] = {
+                    "key": tool_key,
+                    "label": meta["label"],
+                    "installed": False,
+                    "path": None,
+                    "detected_via": None,
+                    "version": None,
+                    "install_supported": False,
+                    "install_manager": None,
+                    "install_manager_label": None,
+                    "install_command": None,
+                    "manual_install": f"Status probe failed: {exc}",
+                    "homepage": meta.get("homepage"),
+                    "download_url": meta.get("download_url"),
+                    "download_supported": _download_supported(tool_key, environment=environment),
+                    "portable_install_supported": _portable_install_supported(tool_key, environment=environment),
+                    "local_tool_root": str((LOCAL_TOOLS_ROOT / tool_key).expanduser()),
+                    "local_bin_root": str(LOCAL_BIN_ROOT.expanduser()),
+                }
+    tools = [indexed[index] for index in range(len(tool_keys))]
     return {"environment": environment, "tools": tools}
 
 
@@ -904,10 +1101,17 @@ def render_external_tool_status_lines(snapshot):
     return lines
 
 
-def install_external_tool(tool_key, dry_run=False, environment=None):
+def install_external_tool(tool_key, dry_run=False, environment=None, event_cb=None):
     environment = environment or detect_host_environment()
     status = get_external_tool_status(tool_key, environment=environment)
+    _emit_tool_event(event_cb, "log", f"Preparing install for {status['label']}", progress=2.0)
     if status["installed"]:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"{status['label']} is already installed at {status['path']}",
+            progress=100.0,
+        )
         return {
             "ok": True,
             "changed": False,
@@ -928,11 +1132,39 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
     )
 
     if prefer_portable:
-        return _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"Using ELFexplorer-managed local install path for {status['label']}",
+            progress=10.0,
+        )
+        return _install_portable_tool(
+            tool_key,
+            environment=environment,
+            dry_run=dry_run,
+            event_cb=event_cb,
+        )
 
     if not command:
         if status["portable_install_supported"]:
-            return _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
+            _emit_tool_event(
+                event_cb,
+                "log",
+                f"No package-manager recipe selected; falling back to local install for {status['label']}",
+                progress=10.0,
+            )
+            return _install_portable_tool(
+                tool_key,
+                environment=environment,
+                dry_run=dry_run,
+                event_cb=event_cb,
+            )
+        _emit_tool_event(
+            event_cb,
+            "log",
+            status.get("manual_install") or "Automatic install is not available on this host.",
+            progress=100.0,
+        )
         return {
             "ok": False,
             "changed": False,
@@ -942,6 +1174,13 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
         }
 
     if dry_run:
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"Dry run: {' '.join(display_command)}",
+            progress=100.0,
+            command=display_command,
+        )
         return {
             "ok": True,
             "changed": False,
@@ -951,9 +1190,19 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
             "manager": manager_key,
         }
 
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
-    ok = completed.returncode == 0
-    output = (completed.stdout or completed.stderr or "").strip()
+    returncode, output = _run_logged_subprocess(
+        command,
+        event_cb=event_cb,
+        progress_range=(15.0, 95.0),
+    )
+    ok = returncode == 0
+    _emit_tool_event(
+        event_cb,
+        "progress",
+        f"{status['label']} install {'completed' if ok else 'failed'}",
+        progress=100.0,
+        command=display_command,
+    )
     if ok:
         return {
             "ok": True,
@@ -962,12 +1211,23 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
             "status": status,
             "command": display_command,
             "manager": manager_key,
-            "returncode": completed.returncode,
+            "returncode": returncode,
             "output": output,
         }
 
     if status["portable_install_supported"]:
-        fallback = _install_portable_tool(tool_key, environment=environment, dry_run=dry_run)
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"Package-manager install failed; attempting local fallback for {status['label']}",
+            progress=96.0,
+        )
+        fallback = _install_portable_tool(
+            tool_key,
+            environment=environment,
+            dry_run=dry_run,
+            event_cb=event_cb,
+        )
         fallback_output = output
         if fallback.get("output"):
             fallback_output = "\n".join([fallback_output, fallback["output"]]).strip()
@@ -988,6 +1248,6 @@ def install_external_tool(tool_key, dry_run=False, environment=None):
         "status": status,
         "command": display_command,
         "manager": manager_key,
-        "returncode": completed.returncode,
+        "returncode": returncode,
         "output": output,
     }

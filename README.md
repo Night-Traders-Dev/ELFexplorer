@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.10.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.3-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,19 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.3
+
+- Added threaded Textual task modals for long-running tooling operations:
+  - popup install/download window with progress bar
+  - live verbose log for download, extraction, wrapper creation, and package-manager output
+  - shared background-task runner so the UI stays responsive while work continues
+- Added Textual startup splash flow:
+  - application name + version display
+  - progress bar for startup checks
+  - host-tool snapshot preload so the integrations tab can render without blocking
+- Parallelized external-tool status collection with a thread pool.
+- Added regression coverage for progress-event emission and probe-failure isolation.
 
 ## What Changed in 0.10.0
 
@@ -360,6 +373,7 @@ python3 src/elfscan.py
 ```
 
 The workspace supports:
+- startup splash with application name, version, and background startup checks
 - scanning (`scan <file> [mode]`)
 - crawling (`crawl <dir> [mode] [recursive:true/false] [max_files]`)
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
@@ -419,6 +433,12 @@ Hotkeys inside workbench:
 - `Esc`: return to workspace
 
 If Textual is unavailable, use `--ui plain` with explicit CLI options.
+
+Tooling UX details:
+- `tool-status` runs in a background modal and refreshes the cached host-tool snapshot
+- `tool-download <tool>` opens a popup with a progress bar and live download log
+- `tool-install <tool>` opens a popup with a progress bar and live install log
+- the workspace startup splash preloads host-tool status so the first tooling view does not block
 
 Example editor session:
 
@@ -606,6 +626,16 @@ Current behavior:
 - performs one-click user-local installs under `~/.elfexplorer/tools` when a portable package is available
 - uses verified package-manager recipes where available
 - falls back to manual-install guidance for tools such as vendor-managed commercial distributions
+- drives Textual install/download/check actions through background worker threads so progress bars and logs stay live
+
+Textual integrations/report UI behavior:
+- report mode shows a startup splash with `ELFexplorer <version>` and a live startup progress bar
+- the `Integrations` tab remains scrollable while showing long install-detail sections
+- palette installs/downloads use a popup modal with:
+  - determinate progress bar
+  - current status line
+  - verbose step log
+  - non-blocking worker thread execution
 
 Current automatic-install coverage is intentionally conservative:
 - `radare2`: `brew`, `apt`, `dnf`, `pacman`

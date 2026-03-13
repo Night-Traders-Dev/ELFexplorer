@@ -5,6 +5,7 @@ from advanced.diffing import compare_reports, render_diff_plain
 from advanced.tooling import list_external_tools, render_external_tool_status_lines
 from edit import ElfEditError, open_binary_editor
 from settings import load_theme_preference, save_theme_preference
+from version import get_version
 
 
 def _now():
@@ -117,6 +118,7 @@ def run_textual_workspace(callbacks):
             self.current_reports = []
             self.last_report = None
             self.editor = None
+            self.tooling_snapshot = None
 
         def _apply_saved_theme(self):
             saved_theme = load_theme_preference()
@@ -151,11 +153,6 @@ def run_textual_workspace(callbacks):
                 yield Input(placeholder="Enter command...", id="command")
             yield Footer()
 
-        def on_mount(self):
-            self._apply_saved_theme()
-            self._log("ELFexplorer Textual Workspace ready.")
-            self._log("Type [bold]help[/bold] for command details.")
-
         def get_system_commands(self, screen):
             from textual.app import SystemCommand
 
@@ -189,6 +186,71 @@ def run_textual_workspace(callbacks):
         def _log(self, text):
             log = self.query_one("#log", RichLog)
             log.write(text)
+
+        def _launch_modal_task(
+            self,
+            *,
+            title,
+            intro,
+            runner,
+            on_complete=None,
+            auto_close_on_success=False,
+            close_label="Close",
+        ):
+            from ui.textual_tasks import BackgroundTaskScreenFactory
+
+            self.push_screen(
+                BackgroundTaskScreenFactory.build(
+                    title=title,
+                    intro=intro,
+                    runner=runner,
+                    on_complete=on_complete,
+                    auto_close_on_success=auto_close_on_success,
+                    close_label=close_label,
+                )
+            )
+
+        def _log_tooling_snapshot(self):
+            if self.tooling_snapshot is None:
+                self._log("Tooling status is not loaded yet.")
+                return
+            self._log("[bold]External tool status:[/bold]")
+            for line in render_external_tool_status_lines(self.tooling_snapshot):
+                self._log(f"  {line}")
+
+        def _launch_startup_splash(self):
+            def runner(emit):
+                emit({"kind": "log", "message": "Loading workspace settings", "progress": 10.0})
+                emit({"kind": "log", "message": "Checking external integrations", "progress": 30.0})
+                snapshot = callbacks["tooling_snapshot"]()
+                emit({"kind": "log", "message": "Preparing workspace services", "progress": 85.0})
+                return {"tooling_snapshot": snapshot, "message": "Workspace startup complete."}
+
+            def on_complete(result, ok):
+                if ok and result:
+                    self.tooling_snapshot = result.get("tooling_snapshot")
+                self._log("ELFexplorer Textual Workspace ready.")
+                self._log("Type [bold]help[/bold] for command details.")
+                if self.tooling_snapshot is not None:
+                    environment = self.tooling_snapshot.get("environment", {})
+                    self._log(
+                        "Host: "
+                        f"{environment.get('os_label', 'Unknown')} / "
+                        f"{environment.get('primary_package_manager_label', 'None detected')}"
+                    )
+
+            self._launch_modal_task(
+                title=f"ELFexplorer {get_version()}",
+                intro="Loading workspace services and checking host integrations.",
+                runner=runner,
+                on_complete=on_complete,
+                auto_close_on_success=True,
+                close_label="Continue",
+            )
+
+        def on_mount(self):
+            self._apply_saved_theme()
+            self._launch_startup_splash()
 
         def _set_reports(self, reports):
             self.current_reports = list(reports)
@@ -259,10 +321,25 @@ def run_textual_workspace(callbacks):
             self.push_screen(EditorWorkbenchScreen.build(editor))
 
         def action_tool_status(self):
-            snapshot = callbacks["tooling_snapshot"]()
-            self._log("[bold]External tool status:[/bold]")
-            for line in render_external_tool_status_lines(snapshot):
-                self._log(f"  {line}")
+            def runner(emit):
+                emit({"kind": "log", "message": "Refreshing external-tool status", "progress": 15.0})
+                snapshot = callbacks["tooling_snapshot"]()
+                emit({"kind": "log", "message": "Status refresh complete", "progress": 100.0})
+                return snapshot
+
+            def on_complete(result, ok):
+                if ok and result:
+                    self.tooling_snapshot = result
+                    self._log_tooling_snapshot()
+
+            self._launch_modal_task(
+                title="Checking External Tools",
+                intro="Probing the host OS, package manager, and installed reverse-engineering tools.",
+                runner=runner,
+                on_complete=on_complete,
+                auto_close_on_success=True,
+                close_label="Continue",
+            )
 
         def action_show_tool_info(self, tool_key):
             detail = callbacks["tooling_detail"](tool_key)
@@ -291,29 +368,61 @@ def run_textual_workspace(callbacks):
                 self._log(f"  manual: {detail['manual_install']}")
 
         def action_install_external_tool(self, tool_key):
-            result = callbacks["install_external_tool"](tool_key)
-            if result.get("ok"):
-                self._log(f"[green]{result['message']}[/green]")
-            else:
-                self._log(f"[yellow]{result['message']}[/yellow]")
-            command = result.get("command")
-            if command:
-                self._log(f"  command: {' '.join(command)}")
-            output = result.get("output")
-            if output:
-                for line in output.splitlines():
-                    self._log(f"  {line}")
+            label = list_external_tools()[tool_key]["label"]
+
+            def runner(emit):
+                return callbacks["install_external_tool"](tool_key, event_cb=emit)
+
+            def on_complete(result, ok):
+                self.tooling_snapshot = callbacks["tooling_snapshot"]()
+                if not result:
+                    self._log(f"[yellow]{label} install ended without a result.[/yellow]")
+                    return
+                if result.get("ok"):
+                    self._log(f"[green]{result['message']}[/green]")
+                else:
+                    self._log(f"[yellow]{result['message']}[/yellow]")
+                command = result.get("command")
+                if command:
+                    self._log(f"  command: {' '.join(command)}")
+                output = result.get("output")
+                if output:
+                    for line in output.splitlines():
+                        self._log(f"  {line}")
+
+            self._launch_modal_task(
+                title=f"Installing {label}",
+                intro="Running installer steps in the background with live progress and verbose logging.",
+                runner=runner,
+                on_complete=on_complete,
+            )
 
         def action_download_external_tool(self, tool_key):
-            result = callbacks["download_external_tool"](tool_key)
-            if result.get("ok"):
-                self._log(f"[green]{result['message']}[/green]")
-            else:
-                self._log(f"[yellow]{result['message']}[/yellow]")
-            if result.get("download_url"):
-                self._log(f"  url: {result['download_url']}")
-            if result.get("download_path"):
-                self._log(f"  path: {result['download_path']}")
+            label = list_external_tools()[tool_key]["label"]
+
+            def runner(emit):
+                return callbacks["download_external_tool"](tool_key, event_cb=emit)
+
+            def on_complete(result, ok):
+                self.tooling_snapshot = callbacks["tooling_snapshot"]()
+                if not result:
+                    self._log(f"[yellow]{label} download ended without a result.[/yellow]")
+                    return
+                if result.get("ok"):
+                    self._log(f"[green]{result['message']}[/green]")
+                else:
+                    self._log(f"[yellow]{result['message']}[/yellow]")
+                if result.get("download_url"):
+                    self._log(f"  url: {result['download_url']}")
+                if result.get("download_path"):
+                    self._log(f"  path: {result['download_path']}")
+
+            self._launch_modal_task(
+                title=f"Downloading {label}",
+                intro="Resolving the vendor package and downloading it in the background.",
+                runner=runner,
+                on_complete=on_complete,
+            )
 
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()

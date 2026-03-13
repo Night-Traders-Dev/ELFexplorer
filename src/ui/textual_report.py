@@ -19,6 +19,7 @@ from edit import ElfEditError, open_binary_editor
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
 from settings import load_theme_preference, save_theme_preference
+from version import get_version
 
 
 def _summary_lines(report: Dict) -> str:
@@ -152,6 +153,7 @@ def run_textual_report(report: Dict):
         def __init__(self, initial_report: Dict):
             super().__init__()
             self.report = dict(initial_report)
+            self.tooling_snapshot = None
 
         def _apply_saved_theme(self):
             saved_theme = load_theme_preference()
@@ -299,14 +301,72 @@ def run_textual_report(report: Dict):
                 "comments. Use the command palette to export scripts for disassemblers and memory-mapping tools, "
                 "or inspect download/install methods for supported third-party tools."
             )
-            snapshot = collect_external_tool_status()
-            lines = list(render_external_tool_status_lines(snapshot))
-            lines.append("")
-            lines.append("Install methods:")
-            for tool_key in sorted(list_external_tools()):
-                lines.extend(render_external_tool_detail_lines(tool_key, environment=snapshot["environment"]))
+            snapshot = self.tooling_snapshot
+            if snapshot is None:
+                lines = [
+                    "Tooling status is still loading.",
+                    "",
+                    "Use the command palette or wait for the startup checks to complete.",
+                ]
+            else:
+                lines = list(render_external_tool_status_lines(snapshot))
                 lines.append("")
+                lines.append("Install methods:")
+                for tool_key in sorted(list_external_tools()):
+                    lines.extend(
+                        render_external_tool_detail_lines(tool_key, environment=snapshot["environment"])
+                    )
+                    lines.append("")
             tooling_status.update("\n".join(lines).rstrip())
+
+        def _launch_modal_task(
+            self,
+            *,
+            title: str,
+            intro: str,
+            runner,
+            on_complete=None,
+            auto_close_on_success=False,
+            close_label="Close",
+        ):
+            from ui.textual_tasks import BackgroundTaskScreenFactory
+
+            self.push_screen(
+                BackgroundTaskScreenFactory.build(
+                    title=title,
+                    intro=intro,
+                    runner=runner,
+                    on_complete=on_complete,
+                    auto_close_on_success=auto_close_on_success,
+                    close_label=close_label,
+                )
+            )
+
+        def _refresh_tooling_snapshot(self):
+            self.tooling_snapshot = collect_external_tool_status()
+            self._refresh_view()
+
+        def _launch_startup_splash(self):
+            def runner(emit):
+                emit({"kind": "log", "message": "Applying saved UI theme", "progress": 10.0})
+                emit({"kind": "log", "message": "Collecting external-tool status", "progress": 30.0})
+                snapshot = collect_external_tool_status()
+                emit({"kind": "log", "message": "Preparing integration panels", "progress": 85.0})
+                return {"tooling_snapshot": snapshot, "message": "Startup checks complete."}
+
+            def on_complete(result, ok):
+                if ok and result:
+                    self.tooling_snapshot = result.get("tooling_snapshot")
+                self._refresh_view()
+
+            self._launch_modal_task(
+                title=f"ELFexplorer {get_version()}",
+                intro="Starting report workspace and checking external integrations.",
+                runner=runner,
+                on_complete=on_complete,
+                auto_close_on_success=True,
+                close_label="Continue",
+            )
 
         def _refresh_view(self):
             summary = self.query_one("#summary", Static)
@@ -513,42 +573,78 @@ def run_textual_report(report: Dict):
                 )
 
         def _install_external_tool(self, tool_key: str):
-            result = install_external_tool(tool_key)
-            self._refresh_view()
-            if result.get("ok"):
-                self.notify(result["message"], title="Tooling", severity="information")
-            else:
-                command = result.get("command")
-                if command:
-                    self.notify(
-                        f"{result['message']} Command: {' '.join(command)}",
-                        title="Tooling",
-                        severity="warning",
-                    )
-                else:
-                    self.notify(result["message"], title="Tooling", severity="warning")
+            label = list_external_tools()[tool_key]["label"]
+
+            def runner(emit):
+                return install_external_tool(tool_key, event_cb=emit)
+
+            def on_complete(result, ok):
+                self._refresh_tooling_snapshot()
+                if not result:
+                    self.notify(f"{label} install ended without a result.", title="Tooling", severity="warning")
+                    return
+                severity = "information" if result.get("ok") else "warning"
+                self.notify(result["message"], title="Tooling", severity=severity)
+
+            self._launch_modal_task(
+                title=f"Installing {label}",
+                intro="Running download, extraction, package-manager, and wrapper steps in the background.",
+                runner=runner,
+                on_complete=on_complete,
+            )
 
         def _download_external_tool(self, tool_key: str):
-            result = download_external_tool(tool_key)
-            self._refresh_view()
-            detail = result["message"]
-            if result.get("download_path"):
-                detail = f"{detail} Path: {result['download_path']}"
-            self.notify(
-                detail,
-                title="Tooling",
-                severity="information" if result.get("ok") else "warning",
+            label = list_external_tools()[tool_key]["label"]
+
+            def runner(emit):
+                return download_external_tool(tool_key, event_cb=emit)
+
+            def on_complete(result, ok):
+                self._refresh_tooling_snapshot()
+                if not result:
+                    self.notify(f"{label} download ended without a result.", title="Tooling", severity="warning")
+                    return
+                detail = result["message"]
+                if result.get("download_path"):
+                    detail = f"{detail} Path: {result['download_path']}"
+                self.notify(
+                    detail,
+                    title="Tooling",
+                    severity="information" if result.get("ok") else "warning",
+                )
+
+            self._launch_modal_task(
+                title=f"Downloading {label}",
+                intro="Resolving the current vendor package and downloading it in the background.",
+                runner=runner,
+                on_complete=on_complete,
             )
 
         def action_check_external_tools(self):
-            self._refresh_view()
-            self.notify("External tool status refreshed.", title="Tooling", severity="information")
+            def runner(emit):
+                emit({"kind": "log", "message": "Refreshing external-tool status", "progress": 15.0})
+                snapshot = collect_external_tool_status()
+                emit({"kind": "log", "message": "Status refresh complete", "progress": 100.0})
+                return snapshot
+
+            def on_complete(result, ok):
+                if ok and result:
+                    self.tooling_snapshot = result
+                    self._refresh_view()
+                    self.notify("External tool status refreshed.", title="Tooling", severity="information")
+
+            self._launch_modal_task(
+                title="Checking External Tools",
+                intro="Probing the host OS, package manager, and installed reverse-engineering tools.",
+                runner=runner,
+                on_complete=on_complete,
+                auto_close_on_success=True,
+                close_label="Continue",
+            )
 
         def action_show_external_tool_info(self, tool_key: str):
-            snapshot = collect_external_tool_status()
-            detail_lines = render_external_tool_detail_lines(
-                tool_key, environment=snapshot["environment"]
-            )
+            snapshot = self.tooling_snapshot or collect_external_tool_status()
+            detail_lines = render_external_tool_detail_lines(tool_key, environment=snapshot["environment"])
             self._refresh_view()
             self.notify(
                 f"{detail_lines[0]} | See Integrations tab for full install details.",
@@ -614,5 +710,6 @@ def run_textual_report(report: Dict):
         def on_mount(self) -> None:
             self._apply_saved_theme()
             self._refresh_view()
+            self._launch_startup_splash()
 
     ReportApp(report).run()
