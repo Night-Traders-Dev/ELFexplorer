@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.12.3` (see `VERSION`).
+Current release: `0.12.4` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -615,11 +615,14 @@ Current dashboard capabilities:
 - preset-aware command preview with editable arguments
 - capturable CLI execution results rendered directly in the browser
 - GUI-tool launch actions using the resolved active binary path
+- long-running tool-task streaming with retained in-browser log output
+- stop/restart controls for browser-managed tool tasks
+- retained task history for recent tool commands during the active web session
 - direct JSON download for the active report
 
 Validation and regression coverage now include:
 - generated dashboard JavaScript syntax validation via `node --check`
-- local HTTP server tests for web `scan`, `save`, `plugin export`, `tooling`, `tool execute`, and `diff` routes
+- local HTTP server tests for web `scan`, `save`, `plugin export`, `tooling`, `tool execute`, `tool task`, and `diff` routes
 - direct verification that the web action buttons map onto working API endpoints
 
 The web dashboard is intentionally dependency-light:

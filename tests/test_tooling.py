@@ -453,6 +453,7 @@ class ToolingTests(unittest.TestCase):
                     "artifact_type": "Bare-metal Firmware",
                     "target": "RP2040",
                     "family": "RP2040",
+                    "uf2_payload_mode": "Flash image",
                 },
                 "binary_map": {"symbols": []},
             },
@@ -462,7 +463,10 @@ class ToolingTests(unittest.TestCase):
             cli_friendly = tool_key in {"bramble", "radare2", "rizin"}
             presets = []
             if tool_key == "bramble":
-                presets = [{"key": "run-firmware", "args": ["{file}"]}]
+                presets = [
+                    {"key": "run-firmware", "args": ["{file}"]},
+                    {"key": "status", "args": ["{file}", "-status"]},
+                ]
             elif tool_key in {"radare2", "rizin"}:
                 presets = [{"key": "sections", "args": ["-A", "-q", "-c", "iS", "{file}"]}]
             return {
@@ -480,10 +484,81 @@ class ToolingTests(unittest.TestCase):
 
         self.assertEqual(result["container_kind"], "uf2")
         self.assertEqual(result["tools"][0]["tool_key"], "bramble")
-        self.assertEqual(result["tools"][0]["default_action"], "launch")
-        self.assertEqual(result["tools"][0]["default_preset_key"], "run-firmware")
+        self.assertEqual(result["tools"][0]["default_action"], "run")
+        self.assertEqual(result["tools"][0]["default_preset_key"], "status")
         imhex = next(item for item in result["tools"] if item["tool_key"] == "imhex")
         self.assertTrue(imhex["recommended"])
+
+    def test_recommend_tool_workflows_skips_bramble_for_uf2_file_container(self):
+        report = {
+            "file": "/tmp/files.uf2",
+            "metadata_text": "File Type: UF2",
+            "scan_result": {
+                "source_language": "C",
+                "artifact_profile": {
+                    "artifact_type": "Bare-metal Firmware",
+                    "target": "RP2040",
+                    "family": "RP2040",
+                    "uf2_payload_mode": "File container",
+                },
+                "binary_map": {"symbols": []},
+            },
+        }
+
+        def fake_model(tool_key, target_path=None, environment=None, executable_override=None):
+            return {
+                "tool_key": tool_key,
+                "status": {"installed": True, "label": tool_key},
+                "target_path": target_path,
+                "executable_override": executable_override or "",
+                "cli_friendly": tool_key in {"bramble", "radare2", "rizin"},
+                "launch_args": ["{file}"],
+                "presets": [{"key": "status", "args": ["{file}", "-status"]}] if tool_key == "bramble" else [],
+            }
+
+        with mock.patch("advanced.tooling.get_external_tool_workbench_model", side_effect=fake_model):
+            result = tooling.recommend_tool_workflows(report)
+
+        bramble = next(item for item in result["tools"] if item["tool_key"] == "bramble")
+        self.assertFalse(bramble["recommended"])
+
+    def test_recommend_tool_workflows_uses_raw_analysis_defaults_for_raw_firmware(self):
+        report = {
+            "file": "/tmp/fw.bin",
+            "metadata_text": "----- General Raw Binary Information -----",
+            "scan_result": {
+                "source_language": "C",
+                "artifact_profile": {
+                    "artifact_type": "Bare-metal Firmware",
+                    "target": "RP2040 (ARM Cortex-M0+)",
+                    "family": "",
+                },
+                "binary_map": {"symbols": []},
+            },
+        }
+
+        def fake_model(tool_key, target_path=None, environment=None, executable_override=None):
+            return {
+                "tool_key": tool_key,
+                "status": {"installed": True, "label": tool_key},
+                "target_path": target_path,
+                "executable_override": executable_override or "",
+                "cli_friendly": tool_key in {"radare2", "rizin"},
+                "launch_args": ["{file}"],
+                "presets": [],
+            }
+
+        with mock.patch("advanced.tooling.get_external_tool_workbench_model", side_effect=fake_model):
+            result = tooling.recommend_tool_workflows(report)
+
+        radare2 = next(item for item in result["tools"] if item["tool_key"] == "radare2")
+        self.assertEqual(radare2["default_action"], "run")
+        self.assertEqual(radare2["default_preset_key"], "")
+        self.assertIn("-n", radare2["default_args"])
+        self.assertIn("-a", radare2["default_args"])
+        self.assertIn("arm", radare2["default_args"])
+        self.assertIn("-b", radare2["default_args"])
+        self.assertIn("16", radare2["default_args"])
 
     def test_recommend_tool_workflows_uses_function_presets_for_compiled_elf(self):
         report = {

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 import urllib.request
+import time
 
 import sys
 
@@ -149,6 +150,14 @@ class WebDashboardTests(unittest.TestCase):
                 "output": "afl output",
                 "returncode": 0,
             },
+            "tool_resolve": lambda report, tool_key, action="run", preset_key=None, args=None: {
+                "ok": True,
+                "message": "resolved",
+                "tool_key": tool_key,
+                "action": action,
+                "status": {"label": tool_key, "installed": True, "path": sys.executable},
+                "command": [sys.executable, "-u", "-c", "print('tool route smoke', flush=True)"],
+            },
             "list_saved": lambda: [],
         }
         server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[], port=0)
@@ -238,6 +247,138 @@ class WebDashboardTests(unittest.TestCase):
             execute_response = json.load(urllib.request.urlopen(execute_request))
             self.assertTrue(execute_response["ok"])
             self.assertEqual(execute_response["message"], "radare2:run:dry")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_dashboard_server_tool_task_streams_output_and_retains_history(self):
+        callbacks = {
+            "tool_recommendations": lambda report: {
+                "target_path": report["file"],
+                "container_kind": "elf",
+                "artifact_type": "Linux User-space Executable",
+                "tools": [],
+            },
+            "tool_execute": lambda report, tool_key, action="run", preset_key=None, args=None, dry_run=False: {
+                "ok": True,
+                "message": "dry preview",
+                "command": [sys.executable, "-u", "-c", "print('preview', flush=True)"],
+            },
+            "tool_resolve": lambda report, tool_key, action="run", preset_key=None, args=None: {
+                "ok": True,
+                "message": "resolved",
+                "tool_key": tool_key,
+                "action": action,
+                "status": {"label": "python-tool", "installed": True, "path": sys.executable},
+                "command": [
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    "import time; print('stream-start', flush=True); time.sleep(0.15); print('stream-end', flush=True)",
+                ],
+            },
+        }
+        runtime = DashboardRuntime(callbacks=callbacks, initial_reports=[_sample_report()])
+        server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[_sample_report()], port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            start_request = urllib.request.Request(
+                f"{url}/api/tooling/task/start",
+                data=json.dumps({"index": 0, "tool_key": "bramble", "action": "run"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            start_response = json.load(urllib.request.urlopen(start_request))
+            task_id = start_response["id"]
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                task_state = json.load(urllib.request.urlopen(f"{url}/api/tooling/task/{task_id}"))
+                if task_state["status"] in {"completed", "failed", "stopped"}:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(task_state["status"], "completed")
+            self.assertIn("stream-start", "\n".join(task_state["log_lines"]))
+            self.assertIn("stream-end", "\n".join(task_state["log_lines"]))
+
+            history = json.load(urllib.request.urlopen(f"{url}/api/tooling/history"))
+            self.assertTrue(history["tasks"])
+            self.assertEqual(history["tasks"][0]["id"], task_id)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_dashboard_server_tool_task_stop_and_restart(self):
+        callbacks = {
+            "tool_recommendations": lambda report: {
+                "target_path": report["file"],
+                "container_kind": "uf2",
+                "artifact_type": "Bare-metal Firmware",
+                "tools": [],
+            },
+            "tool_execute": lambda report, tool_key, action="run", preset_key=None, args=None, dry_run=False: {
+                "ok": True,
+                "message": "dry preview",
+                "command": [sys.executable, "-u", "-c", "print('preview', flush=True)"],
+            },
+            "tool_resolve": lambda report, tool_key, action="run", preset_key=None, args=None: {
+                "ok": True,
+                "message": "resolved",
+                "tool_key": tool_key,
+                "action": action,
+                "status": {"label": "python-tool", "installed": True, "path": sys.executable},
+                "command": [
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    "import time; print('tick', flush=True); time.sleep(1.0); print('done', flush=True)",
+                ],
+            },
+        }
+        server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[_sample_report()], port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            start_request = urllib.request.Request(
+                f"{url}/api/tooling/task/start",
+                data=json.dumps({"index": 0, "tool_key": "bramble", "action": "run"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            start_response = json.load(urllib.request.urlopen(start_request))
+            task_id = start_response["id"]
+            stop_request = urllib.request.Request(
+                f"{url}/api/tooling/task/{task_id}/stop",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(stop_request).read()
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                task_state = json.load(urllib.request.urlopen(f"{url}/api/tooling/task/{task_id}"))
+                if task_state["status"] == "stopped":
+                    break
+                time.sleep(0.1)
+            self.assertEqual(task_state["status"], "stopped")
+
+            restart_request = urllib.request.Request(
+                f"{url}/api/tooling/task/{task_id}/restart",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            restart_response = json.load(urllib.request.urlopen(restart_request))
+            self.assertNotEqual(restart_response["id"], task_id)
+            cleanup_request = urllib.request.Request(
+                f"{url}/api/tooling/task/{restart_response['id']}/stop",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(cleanup_request).read()
         finally:
             server.shutdown()
             server.server_close()

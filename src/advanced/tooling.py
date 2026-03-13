@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.12.3 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.12.4 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {
@@ -1503,6 +1503,76 @@ def _find_preset_args(model, preset_key):
     return []
 
 
+_ADDRESS_RANGE_RE = re.compile(r"Address Range:\s*0x([0-9A-Fa-f]+)\s*-\s*0x([0-9A-Fa-f]+)")
+
+
+def _extract_container_base_address(report):
+    metadata_text = str(report.get("metadata_text", ""))
+    match = _ADDRESS_RANGE_RE.search(metadata_text)
+    if not match:
+        return None
+    try:
+        return int(match.group(1), 16)
+    except Exception:
+        return None
+
+
+def _infer_raw_analysis_architecture(report):
+    artifact = report.get("scan_result", {}).get("artifact_profile", {})
+    hint_text = " ".join(
+        str(
+            artifact.get(key, "")
+        )
+        for key in (
+            "target",
+            "family",
+            "uf2_arch",
+            "board",
+            "device_description",
+            "runtime",
+            "sdk",
+        )
+    ).lower()
+
+    if any(
+        token in hint_text
+        for token in (
+            "rp2040",
+            "rp2350 secure arm",
+            "rp2350 non-secure arm",
+            "cortex-m",
+            "samd",
+            "stm32",
+            "nrf",
+            "ra4m1",
+            "lpc55",
+            "mimxrt",
+        )
+    ):
+        return "arm", "16"
+    if any(token in hint_text for token in ("risc-v", "riscv", "gd32vf", "ch32v")):
+        if "64" in hint_text or "rv64" in hint_text:
+            return "riscv", "64"
+        return "riscv", "32"
+    if any(token in hint_text for token in ("avr", "atmega")):
+        return "avr", None
+    return None, None
+
+
+def _build_raw_analysis_args(report, command):
+    args = ["-n"]
+    arch, bits = _infer_raw_analysis_architecture(report)
+    base_addr = _extract_container_base_address(report)
+    if arch:
+        args.extend(["-a", arch])
+    if bits:
+        args.extend(["-b", bits])
+    if base_addr not in (None, 0):
+        args.extend(["-m", hex(base_addr)])
+    args.extend(["-q", "-c", command, "{file}"])
+    return args
+
+
 def recommend_tool_workflows(report, environment=None, executable_overrides=None):
     environment = environment or detect_host_environment()
     executable_overrides = executable_overrides or {}
@@ -1513,6 +1583,7 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
     artifact_type = str(artifact.get("artifact_type", "Unknown"))
     target_hint = str(artifact.get("target", ""))
     family_hint = str(artifact.get("family", ""))
+    uf2_payload_mode = str(artifact.get("uf2_payload_mode", ""))
     source_language = str(scan.get("source_language", "Unknown"))
     symbol_count = len((scan.get("binary_map") or {}).get("symbols") or [])
     is_firmware = artifact_type == "Bare-metal Firmware" or container_kind in {
@@ -1526,7 +1597,7 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
 
     recommendations = {}
 
-    def recommend(tool_key, *, priority, reason, action, preset_key=None):
+    def recommend(tool_key, *, priority, reason, action, preset_key=None, default_args=None):
         current = recommendations.get(tool_key)
         if current and current["priority"] >= priority:
             return
@@ -1535,6 +1606,7 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
             "reason": str(reason),
             "default_action": str(action),
             "default_preset_key": preset_key or "",
+            "default_args": list(default_args) if default_args is not None else None,
         }
 
     cli_preset = "functions" if symbol_count and is_elf else ("sections" if is_firmware else "file-info")
@@ -1582,11 +1654,31 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
     if is_firmware:
         recommend(
             "imhex",
-            priority=96,
-            reason="Best fit for firmware, raw images, and byte-accurate memory inspection.",
+            priority=99 if container_kind in {"intel-hex", "srec", "raw-firmware", "uf2"} else 96,
+            reason=(
+                "Best fit for containerized firmware formats and byte-accurate memory inspection."
+                if container_kind in {"uf2", "intel-hex", "srec"}
+                else "Best fit for firmware, raw images, and byte-accurate memory inspection."
+            ),
             action="launch",
         )
-        if is_elf:
+        if container_kind == "raw-firmware":
+            raw_args = _build_raw_analysis_args(report, "iI;izz")
+            recommend(
+                "radare2",
+                priority=90,
+                reason="Raw firmware images are opened in no-loader mode with inferred ISA and load-base hints.",
+                action="run",
+                default_args=raw_args,
+            )
+            recommend(
+                "rizin",
+                priority=88,
+                reason="Raw firmware images are opened in no-loader mode with inferred ISA and load-base hints.",
+                action="run",
+                default_args=raw_args,
+            )
+        elif is_elf:
             recommend(
                 "radare2",
                 priority=94,
@@ -1601,13 +1693,17 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
                 action="run",
                 preset_key="sections",
             )
-        if is_rp_family and container_kind in {"uf2", "elf"}:
+        if (
+            is_rp_family
+            and container_kind in {"uf2", "elf"}
+            and uf2_payload_mode != "File container"
+        ):
             recommend(
                 "bramble",
                 priority=100,
-                reason="RP2040/RP2350 firmware can be launched directly in Bramble.",
-                action="launch",
-                preset_key="run-firmware",
+                reason="RP2040/RP2350 firmware can be run directly in Bramble with streamed status output.",
+                action="run",
+                preset_key="status",
             )
 
     if source_language in {"C", "C++", "Rust", "Go"} and is_elf:
@@ -1643,13 +1739,16 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
                 "default_preset_key": (
                     model.get("presets", [{}])[0].get("key", "") if model.get("presets") else ""
                 ),
+                "default_args": None,
             },
         )
-        default_args = (
-            _find_preset_args(model, recommendation["default_preset_key"])
-            if recommendation["default_preset_key"]
-            else list(model.get("launch_args", []))
-        )
+        default_args = recommendation.get("default_args")
+        if default_args is None:
+            default_args = (
+                _find_preset_args(model, recommendation["default_preset_key"])
+                if recommendation["default_preset_key"]
+                else list(model.get("launch_args", []))
+            )
         tools.append(
             {
                 **model,
@@ -1677,6 +1776,55 @@ def recommend_tool_workflows(report, environment=None, executable_overrides=None
     }
 
 
+def resolve_external_tool_command(
+    tool_key,
+    *,
+    action="run",
+    args=None,
+    target_path=None,
+    environment=None,
+    executable_override=None,
+):
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
+    if not status.get("installed"):
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"{status['label']} is not installed on this host.",
+            "status": status,
+        }
+
+    profile = _get_tool_workbench_profile(tool_key)
+    arg_tokens = _normalize_tool_args(args)
+    if not arg_tokens and action == "launch":
+        arg_tokens = list(profile.get("launch_args", []))
+    if not arg_tokens:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": "No command arguments provided.",
+            "status": status,
+        }
+    resolved_args = _resolve_tool_args(arg_tokens, target_path=target_path)
+    return {
+        "ok": True,
+        "changed": False,
+        "message": f"Resolved command for {status['label']}.",
+        "status": status,
+        "tool_key": tool_key,
+        "action": action,
+        "target_path": str(Path(target_path).expanduser()) if target_path else "",
+        "cli_friendly": bool(profile.get("cli_friendly")),
+        "resolved_args": resolved_args,
+        "command": [status["path"], *resolved_args],
+    }
+
+
 def run_external_tool_command(
     tool_key,
     args=None,
@@ -1687,36 +1835,24 @@ def run_external_tool_command(
     cwd=None,
     executable_override=None,
 ):
-    environment = environment or detect_host_environment()
-    status = get_external_tool_status(
+    resolved = resolve_external_tool_command(
         tool_key,
+        action="run",
+        args=args,
+        target_path=target_path,
         environment=environment,
         executable_override=executable_override,
     )
-    if not status.get("installed"):
+    status = resolved.get("status", {})
+    if not resolved.get("ok"):
         _emit_tool_event(
             event_cb,
             "log",
-            f"{status['label']} is not installed on this host.",
+            resolved.get("message", "Failed to resolve tool command."),
             progress=100.0,
         )
-        return {
-            "ok": False,
-            "changed": False,
-            "message": f"{status['label']} is not installed on this host.",
-            "status": status,
-        }
-
-    arg_tokens = _normalize_tool_args(args)
-    if not arg_tokens:
-        return {
-            "ok": False,
-            "changed": False,
-            "message": "No command arguments provided.",
-            "status": status,
-        }
-    resolved_args = _resolve_tool_args(arg_tokens, target_path=target_path)
-    command = [status["path"], *resolved_args]
+        return resolved
+    command = list(resolved["command"])
     _emit_tool_event(
         event_cb,
         "log",
@@ -1790,32 +1926,24 @@ def launch_external_tool(
     cwd=None,
     executable_override=None,
 ):
-    environment = environment or detect_host_environment()
-    status = get_external_tool_status(
+    resolved = resolve_external_tool_command(
         tool_key,
+        action="launch",
+        args=args,
+        target_path=target_path,
         environment=environment,
         executable_override=executable_override,
     )
-    if not status.get("installed"):
+    status = resolved.get("status", {})
+    if not resolved.get("ok"):
         _emit_tool_event(
             event_cb,
             "log",
-            f"{status['label']} is not installed on this host.",
+            resolved.get("message", "Failed to resolve external launch."),
             progress=100.0,
         )
-        return {
-            "ok": False,
-            "changed": False,
-            "message": f"{status['label']} is not installed on this host.",
-            "status": status,
-        }
-
-    profile = _get_tool_workbench_profile(tool_key)
-    arg_tokens = _normalize_tool_args(args)
-    if not arg_tokens:
-        arg_tokens = list(profile.get("launch_args", []))
-    resolved_args = _resolve_tool_args(arg_tokens, target_path=target_path)
-    command = [status["path"], *resolved_args]
+        return resolved
+    command = list(resolved["command"])
     _emit_tool_event(
         event_cb,
         "log",

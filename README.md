@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.12.3-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.12.4-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,31 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.12.4
+
+- Added background tool-task streaming to the web dashboard for long-running third-party commands.
+- Added browser-side task controls:
+  - start run/launch tasks
+  - stop active tasks
+  - restart prior tasks
+  - retained command history for the current web session
+- Added task routes for the browser runner:
+  - task start
+  - task polling
+  - task stop
+  - task restart
+  - task history
+- Strengthened per-format defaults in the recommendation engine:
+  - RP2040/RP2350 UF2 firmware now prefers streamed `bramble` status runs
+  - UF2 file-container payloads avoid Bramble defaults
+  - raw firmware now gets `radare2`/`rizin` no-loader defaults with inferred ISA hints when available
+  - Intel HEX and S-record inputs stay biased toward `imhex`
+- Added regression tests for:
+  - streamed web task execution
+  - stop/restart task control flow
+  - retained task-history routes
+  - UF2/raw-firmware recommendation behavior
 
 ## What Changed in 0.12.3
 
@@ -504,6 +529,9 @@ Current dashboard workflows:
 - command preview for recommended third-party tools
 - run CLI-friendly tools and capture their output directly in the browser
 - launch GUI-centric tools with binary-aware default parameters
+- stream long-running tool output into the browser with polling-backed task updates
+- stop and restart tool tasks
+- review retained task history from the Tool Runner tab
 - export the active report to Markdown or PDF
 - download the active report as JSON
 

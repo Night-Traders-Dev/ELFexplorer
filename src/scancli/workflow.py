@@ -17,6 +17,7 @@ from advanced.tooling import (
     install_external_tool,
     launch_external_tool,
     recommend_tool_workflows,
+    resolve_external_tool_command,
     run_external_tool_command,
 )
 from reporting.export import (
@@ -265,6 +266,30 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
             executable_override=executable_override,
         )
 
+    def tool_resolve_for_report(report, tool_key, action="run", preset_key=None, args=None):
+        target_path = report.get("file")
+        executable_override = load_tool_path(tool_key)
+        model = get_external_tool_workbench_model(
+            tool_key,
+            target_path=target_path,
+            executable_override=executable_override,
+        )
+        resolved_args = args
+        if resolved_args in (None, "") and preset_key:
+            for preset in model.get("presets", []):
+                if preset.get("key") == preset_key:
+                    resolved_args = preset.get("args", [])
+                    break
+        if resolved_args in (None, "") and action == "launch":
+            resolved_args = model.get("launch_args", [])
+        return resolve_external_tool_command(
+            tool_key,
+            action=action,
+            args=resolved_args,
+            target_path=target_path,
+            executable_override=executable_override,
+        )
+
     return {
         "scan": lambda path, mode="general": build_scan_report(path, mode=mode, options=scan_options),
         "crawl": lambda path, mode="general", recursive=True, max_files=None: crawl_directory(
@@ -296,6 +321,7 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
             executable_override=load_tool_path(tool_key),
         ),
         "tool_recommendations": tool_recommendations_for_report,
+        "tool_resolve": tool_resolve_for_report,
         "tool_execute": tool_execute_for_report,
         "download_external_tool": download_external_tool,
         "install_external_tool": install_external_tool,

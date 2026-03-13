@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import html
 import json
+import os
+import subprocess
+import threading
+import time
+import uuid
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,12 +68,231 @@ WEB_THEME_OPTIONS = {
 }
 
 
+class ToolTaskManager:
+    def __init__(self, max_history=40, max_log_lines=600):
+        self.max_history = max_history
+        self.max_log_lines = max_log_lines
+        self._lock = threading.RLock()
+        self._tasks = {}
+        self._history = []
+
+    def _snapshot(self, task):
+        return {
+            "id": task["id"],
+            "tool_key": task["tool_key"],
+            "tool_label": task["tool_label"],
+            "action": task["action"],
+            "status": task["status"],
+            "message": task["message"],
+            "progress": task["progress"],
+            "command": list(task["command"]),
+            "pid": task.get("pid"),
+            "returncode": task.get("returncode"),
+            "request": dict(task["request"]),
+            "started_at": task["started_at"],
+            "finished_at": task.get("finished_at"),
+            "stop_requested": bool(task.get("stop_requested")),
+            "restarted_from": task.get("restarted_from"),
+            "log_lines": list(task.get("log_lines", [])),
+        }
+
+    def list_history(self):
+        with self._lock:
+            return [self._snapshot(self._tasks[task_id]) for task_id in self._history]
+
+    def get(self, task_id):
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                raise RuntimeError(f"Unknown tool task '{task_id}'.")
+            return self._snapshot(task)
+
+    def start(self, resolved, request, restarted_from=None):
+        if not resolved.get("ok"):
+            raise RuntimeError(resolved.get("message", "Failed to resolve tool command."))
+        task_id = uuid.uuid4().hex[:12]
+        now = datetime.now(timezone.utc).isoformat()
+        task = {
+            "id": task_id,
+            "tool_key": resolved.get("tool_key", request.get("tool_key")),
+            "tool_label": resolved.get("status", {}).get("label", request.get("tool_key", "tool")),
+            "action": resolved.get("action", request.get("action", "run")),
+            "status": "queued",
+            "message": "Queued tool task.",
+            "progress": 2.0,
+            "command": list(resolved.get("command", [])),
+            "request": dict(request),
+            "started_at": now,
+            "finished_at": None,
+            "pid": None,
+            "returncode": None,
+            "process": None,
+            "thread": None,
+            "stop_requested": False,
+            "stop_event": threading.Event(),
+            "log_lines": [],
+            "restarted_from": restarted_from,
+        }
+        with self._lock:
+            self._tasks[task_id] = task
+            self._history.insert(0, task_id)
+            del self._history[self.max_history :]
+        thread = threading.Thread(target=self._run_task, args=(task_id,), daemon=True)
+        with self._lock:
+            task["thread"] = thread
+        thread.start()
+        return self.get(task_id)
+
+    def stop(self, task_id):
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                raise RuntimeError(f"Unknown tool task '{task_id}'.")
+            task["stop_requested"] = True
+            task["message"] = f"Stop requested for {task['tool_label']}."
+            task["stop_event"].set()
+            process = task.get("process")
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        return self.get(task_id)
+
+    def _append_log(self, task_id, line):
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return
+            task["log_lines"].append(str(line))
+            if len(task["log_lines"]) > self.max_log_lines:
+                task["log_lines"] = task["log_lines"][-self.max_log_lines :]
+
+    def _set_state(self, task_id, **updates):
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return
+            task.update(updates)
+
+    def _read_output(self, task_id, process):
+        stream = process.stdout
+        if stream is None:
+            return
+        try:
+            for line in iter(stream.readline, ""):
+                if not line:
+                    break
+                self._append_log(task_id, line.rstrip())
+                self._set_state(task_id, progress=65.0)
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    def _terminate_process(self, process):
+        try:
+            process.terminate()
+        except Exception:
+            return
+        try:
+            process.wait(timeout=2.0)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                return
+
+    def _run_task(self, task_id):
+        with self._lock:
+            task = self._tasks[task_id]
+            command = list(task["command"])
+            tool_label = task["tool_label"]
+            action = task["action"]
+            stop_event = task["stop_event"]
+
+        try:
+            self._set_state(
+                task_id,
+                status="starting",
+                message=f"Starting {tool_label} ({action}).",
+                progress=10.0,
+            )
+            creationflags = 0
+            if os.name == "nt":
+                creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+                start_new_session=(os.name != "nt"),
+                creationflags=creationflags,
+            )
+            self._set_state(
+                task_id,
+                process=process,
+                pid=process.pid,
+                status="running",
+                message=f"{tool_label} running (pid={process.pid}).",
+                progress=25.0,
+            )
+            reader = threading.Thread(target=self._read_output, args=(task_id, process), daemon=True)
+            reader.start()
+            while True:
+                returncode = process.poll()
+                if returncode is not None:
+                    break
+                if stop_event.is_set():
+                    self._set_state(task_id, status="stopping", message=f"Stopping {tool_label}…", progress=85.0)
+                    self._terminate_process(process)
+                time.sleep(0.15)
+            reader.join(timeout=1.5)
+            returncode = process.returncode
+            with self._lock:
+                task = self._tasks[task_id]
+                stopped = bool(task.get("stop_requested"))
+            finished_at = datetime.now(timezone.utc).isoformat()
+            if stopped:
+                status = "stopped"
+                message = f"{tool_label} stopped."
+            elif returncode == 0:
+                status = "completed"
+                message = f"{tool_label} completed."
+            else:
+                status = "failed"
+                message = f"{tool_label} failed."
+            self._set_state(
+                task_id,
+                status=status,
+                message=message,
+                returncode=returncode,
+                finished_at=finished_at,
+                progress=100.0,
+                process=None,
+            )
+        except Exception as exc:
+            self._append_log(task_id, f"[internal] {exc}")
+            self._set_state(
+                task_id,
+                status="failed",
+                message=f"Tool task failed: {exc}",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                progress=100.0,
+                process=None,
+            )
+
+
 class DashboardRuntime:
     def __init__(self, callbacks=None, initial_reports=None):
         self.callbacks = callbacks or {}
         self.reports = list(initial_reports or [])
         self.message = "Dashboard ready."
         self.active_diff = None
+        self.tool_tasks = ToolTaskManager()
 
     def _callback(self, name):
         value = self.callbacks.get(name)
@@ -98,7 +322,8 @@ class DashboardRuntime:
             and bool(self._callback("export_tool_plugin")),
             "tooling": bool(self._callback("tooling_snapshot")),
             "tool_runner": bool(self._callback("tool_recommendations"))
-            and bool(self._callback("tool_execute")),
+            and bool(self._callback("tool_execute"))
+            and bool(self._callback("tool_resolve")),
             "diff": bool(self._callback("scan")),
         }
 
@@ -125,6 +350,7 @@ class DashboardRuntime:
             "web_themes": WEB_THEME_OPTIONS,
             "tool_plugin_formats": self._tool_plugin_formats(),
             "active_diff": self.active_diff,
+            "tool_task_count": len(self.tool_tasks.list_history()),
         }
 
     def replace_reports(self, reports, message):
@@ -263,6 +489,55 @@ class DashboardRuntime:
         if message:
             self.message = message
         return result
+
+    def tool_history(self):
+        return {"tasks": self.tool_tasks.list_history()}
+
+    def tool_task(self, task_id):
+        return self.tool_tasks.get(task_id)
+
+    def start_tool_task(self, index, tool_key, action="run", preset_key=None, args=None):
+        callback = self._callback("tool_resolve")
+        if not callback:
+            raise RuntimeError("Tool task execution is unavailable in this dashboard context.")
+        report = self.get_report(index)
+        resolved = callback(
+            report,
+            tool_key,
+            action=action,
+            preset_key=preset_key,
+            args=args,
+        )
+        if not resolved.get("ok"):
+            raise RuntimeError(resolved.get("message", "Failed to resolve tool task."))
+        snapshot = self.tool_tasks.start(
+            resolved,
+            request={
+                "index": int(index),
+                "tool_key": tool_key,
+                "action": action,
+                "preset_key": preset_key or "",
+                "args": args or "",
+            },
+        )
+        self.message = f"Started {snapshot['tool_label']} task."
+        return snapshot
+
+    def stop_tool_task(self, task_id):
+        snapshot = self.tool_tasks.stop(task_id)
+        self.message = snapshot.get("message", self.message)
+        return snapshot
+
+    def restart_tool_task(self, task_id):
+        snapshot = self.tool_tasks.get(task_id)
+        request = snapshot.get("request") or {}
+        return self.start_tool_task(
+            request.get("index"),
+            request.get("tool_key"),
+            action=request.get("action", "run"),
+            preset_key=request.get("preset_key"),
+            args=request.get("args"),
+        )
 
     def compare_with(self, index, other_path, mode="general"):
         report = self.get_report(index)
@@ -674,6 +949,10 @@ def build_dashboard_html(initial_state):
     let toolRunnerPresetKey = '';
     let toolRunnerArgsText = '';
     let toolRunnerResult = null;
+    let toolRunnerHistory = [];
+    let activeToolTaskId = null;
+    let selectedHistoryTaskId = null;
+    let toolTaskPollTimer = null;
     let renderFrame = null;
     const themeSelect = document.getElementById('theme-select');
     const themeKey = 'elfexplorer.web.theme';
@@ -705,6 +984,13 @@ def build_dashboard_html(initial_state):
       toolRunnerPresetKey = '';
       toolRunnerArgsText = '';
       toolRunnerResult = null;
+      toolRunnerHistory = [];
+      activeToolTaskId = null;
+      selectedHistoryTaskId = null;
+      if (toolTaskPollTimer !== null) {{
+        clearTimeout(toolTaskPollTimer);
+        toolTaskPollTimer = null;
+      }}
     }}
 
     function shellQuote(value) {{
@@ -720,6 +1006,11 @@ def build_dashboard_html(initial_state):
 
     function currentToolRecommendation() {{
       return (toolRecommendations?.tools || []).find((item) => item.tool_key === activeRunnerToolKey) || null;
+    }}
+
+    function currentHistoryTask() {{
+      const targetId = selectedHistoryTaskId || activeToolTaskId;
+      return (toolRunnerHistory || []).find((item) => item.id === targetId) || null;
     }}
 
     function applyToolRunnerDefaults(tool) {{
@@ -1096,6 +1387,8 @@ def build_dashboard_html(initial_state):
         return '<div class="empty">No tool workflows are available for this report.</div>';
       }}
       const current = currentToolRecommendation() || tools[0];
+      const historyTask = currentHistoryTask();
+      const displayResult = toolRunnerResult || historyTask;
       const presets = current.presets || [];
       const supportsRun = Boolean(current.cli_friendly || presets.length);
       const actionOptions = [
@@ -1107,17 +1400,28 @@ def build_dashboard_html(initial_state):
           presets.map((preset) => `<option value="${{preset.key}}"${{toolRunnerPresetKey === preset.key ? ' selected' : ''}}>${{escapeHtml(preset.label)}}</option>`)
         )
         .join('');
-      const resultBlock = toolRunnerResult
+      const canStop = ['starting', 'running', 'stopping', 'queued'].includes(displayResult?.status || '');
+      const resultBlock = displayResult
         ? codeBlock(
             [
-              toolRunnerResult.message || '',
-              toolRunnerResult.command ? `command: ${{toolRunnerResult.command.join(' ')}}` : '',
-              toolRunnerResult.pid ? `pid: ${{toolRunnerResult.pid}}` : '',
-              toolRunnerResult.returncode !== undefined ? `returncode: ${{toolRunnerResult.returncode}}` : '',
-              toolRunnerResult.output || '',
+              displayResult.message || '',
+              displayResult.command ? `command: ${{displayResult.command.join(' ')}}` : '',
+              displayResult.pid ? `pid: ${{displayResult.pid}}` : '',
+              displayResult.returncode !== undefined ? `returncode: ${{displayResult.returncode}}` : '',
+              displayResult.output || '',
+              ...(displayResult.log_lines || []),
             ].filter(Boolean).join('\\n')
           )
         : '<div class="muted">Preview, run, or launch a tool to see the resolved command and execution result here.</div>';
+      const historyMarkup = toolRunnerHistory.length
+        ? toolRunnerHistory.map((item) => `
+            <div class="info-row" data-tool-task-select="${{item.id}}" style="cursor:pointer; border-color:${{item.id === selectedHistoryTaskId ? 'color-mix(in srgb, var(--primary) 44%, var(--border))' : 'var(--border)'}};">
+              <div><strong>${{escapeHtml(item.tool_label || item.tool_key)}}</strong></div>
+              <div class="muted">${{escapeHtml(item.action || 'run')}} • ${{escapeHtml(item.status || 'unknown')}}</div>
+              <div class="muted">${{escapeHtml((item.command || []).join(' '))}}</div>
+            </div>
+          `).join('')
+        : '<div class="muted">No tool tasks have been started yet.</div>';
 
       return `
         <div class="runner-grid">
@@ -1163,7 +1467,9 @@ def build_dashboard_html(initial_state):
                 <div class="toolbar-row">
                   <button type="button" id="tool-runner-refresh">Refresh Recommendations</button>
                   <button type="button" id="tool-runner-preview">Preview Command</button>
-                  <button type="button" id="tool-runner-execute" class="primary">${{toolRunnerAction === 'launch' ? 'Launch Tool' : 'Run Tool'}}</button>
+                  <button type="button" id="tool-runner-execute" class="primary">${{toolRunnerAction === 'launch' ? 'Start Launch Task' : 'Start Run Task'}}</button>
+                  <button type="button" id="tool-runner-stop" ${{canStop ? '' : 'disabled'}}>Stop Task</button>
+                  <button type="button" id="tool-runner-restart" ${{selectedHistoryTaskId ? '' : 'disabled'}}>Restart Task</button>
                 </div>
               </div>
             </div>
@@ -1173,7 +1479,17 @@ def build_dashboard_html(initial_state):
             </div>
             <div class="detail-card">
               <strong class="muted">Execution Result</strong>
+              ${{
+                displayResult?.id
+                  ? `<div class="muted" style="margin-top:10px;">task=${{escapeHtml(displayResult.id)}} • status=${{escapeHtml(displayResult.status || 'unknown')}} • progress=${{displayResult.progress ?? 0}}%</div>
+                     <progress max="100" value="${{displayResult.progress ?? 0}}" style="width:100%; margin-top:10px;"></progress>`
+                  : ''
+              }}
               <div class="output-log" style="margin-top:12px;">${{resultBlock}}</div>
+            </div>
+            <div class="detail-card">
+              <strong class="muted">Command History</strong>
+              <div class="info-list" style="margin-top:12px;">${{historyMarkup}}</div>
             </div>
           </div>
         </div>
@@ -1367,6 +1683,21 @@ def build_dashboard_html(initial_state):
       syncToolRunnerSelection();
     }}
 
+    async function ensureToolHistory(force = false) {{
+      if (!force && toolRunnerHistory.length) return;
+      const payload = await apiGet('/api/tooling/history');
+      toolRunnerHistory = payload.tasks || [];
+      if (!selectedHistoryTaskId && toolRunnerHistory.length) {{
+        selectedHistoryTaskId = toolRunnerHistory[0].id;
+      }}
+      const activeTask = (toolRunnerHistory || []).find((item) =>
+        ['starting', 'running', 'stopping', 'queued'].includes(item.status || '')
+      );
+      if (activeTask) {{
+        activeToolTaskId = activeTask.id;
+      }}
+    }}
+
     async function showToolDetail(toolKey) {{
       await ensureToolingSnapshot();
       if (!toolingSnapshot.details[toolKey]) {{
@@ -1392,6 +1723,80 @@ def build_dashboard_html(initial_state):
       scheduleRender();
     }}
 
+    async function pollToolTask(taskId) {{
+      if (!taskId) return;
+      try {{
+        const payload = await apiGet(`/api/tooling/task/${{taskId}}`);
+        toolRunnerResult = payload;
+        activeToolTaskId = payload.status === 'running' || payload.status === 'starting' || payload.status === 'stopping'
+          ? payload.id
+          : null;
+        selectedHistoryTaskId = payload.id;
+        await ensureToolHistory(true);
+        scheduleRender();
+        if (activeToolTaskId) {{
+          toolTaskPollTimer = setTimeout(() => pollToolTask(taskId), 700);
+        }} else {{
+          toolTaskPollTimer = null;
+        }}
+      }} catch (error) {{
+        toolTaskPollTimer = null;
+        setStatus(error.message);
+      }}
+    }}
+
+    async function startToolTask() {{
+      const tool = currentToolRecommendation();
+      if (!tool) return;
+      const payload = await apiPost('/api/tooling/task/start', {{
+        index: selectedIndex,
+        tool_key: tool.tool_key,
+        action: toolRunnerAction,
+        preset_key: toolRunnerPresetKey || null,
+        args: toolRunnerArgsText.trim(),
+      }});
+      toolRunnerResult = payload;
+      activeToolTaskId = payload.id;
+      selectedHistoryTaskId = payload.id;
+      await ensureToolHistory(true);
+      setStatus(payload.message || `Started ${{tool.tool_key}} task.`);
+      if (toolTaskPollTimer !== null) {{
+        clearTimeout(toolTaskPollTimer);
+      }}
+      toolTaskPollTimer = setTimeout(() => pollToolTask(payload.id), 250);
+      scheduleRender();
+    }}
+
+    async function stopToolTask() {{
+      const taskId = activeToolTaskId || selectedHistoryTaskId;
+      if (!taskId) return;
+      const payload = await apiPost(`/api/tooling/task/${{taskId}}/stop`, {{}});
+      toolRunnerResult = payload;
+      selectedHistoryTaskId = payload.id;
+      setStatus(payload.message || 'Stop requested.');
+      if (toolTaskPollTimer !== null) {{
+        clearTimeout(toolTaskPollTimer);
+      }}
+      toolTaskPollTimer = setTimeout(() => pollToolTask(taskId), 250);
+      scheduleRender();
+    }}
+
+    async function restartToolTask() {{
+      const taskId = selectedHistoryTaskId || activeToolTaskId;
+      if (!taskId) return;
+      const payload = await apiPost(`/api/tooling/task/${{taskId}}/restart`, {{}});
+      toolRunnerResult = payload;
+      activeToolTaskId = payload.id;
+      selectedHistoryTaskId = payload.id;
+      await ensureToolHistory(true);
+      setStatus(payload.message || 'Restarted tool task.');
+      if (toolTaskPollTimer !== null) {{
+        clearTimeout(toolTaskPollTimer);
+      }}
+      toolTaskPollTimer = setTimeout(() => pollToolTask(payload.id), 250);
+      scheduleRender();
+    }}
+
     async function runCompare(otherPath, mode) {{
       if (selectedIndex === null || selectedIndex === undefined) return;
       const payload = await apiPost('/api/diff', {{ index: selectedIndex, path: otherPath, mode }});
@@ -1412,7 +1817,14 @@ def build_dashboard_html(initial_state):
       activeTab = tab;
       document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item.dataset.tab === tab));
       if (tab === 'tool-runner') {{
-        ensureToolRecommendations().then(() => scheduleRender()).catch((error) => setStatus(error.message));
+        Promise.all([ensureToolRecommendations(), ensureToolHistory()])
+          .then(() => {{
+            if (activeToolTaskId && toolTaskPollTimer === null) {{
+              toolTaskPollTimer = setTimeout(() => pollToolTask(activeToolTaskId), 250);
+            }}
+            scheduleRender();
+          }})
+          .catch((error) => setStatus(error.message));
       }}
       if (tab === 'integrations') {{
         ensureToolingSnapshot().then(() => scheduleRender()).catch((error) => setStatus(error.message));
@@ -1597,6 +2009,17 @@ def build_dashboard_html(initial_state):
       }}
     }});
 
+    document.addEventListener('click', (event) => {{
+      const item = event.target.closest('[data-tool-task-select]');
+      if (!item) return;
+      const task = (toolRunnerHistory || []).find((entry) => entry.id === item.dataset.toolTaskSelect);
+      if (!task) return;
+      selectedHistoryTaskId = task.id;
+      toolRunnerResult = task;
+      activeToolTaskId = ['starting', 'running', 'stopping', 'queued'].includes(task.status || '') ? task.id : null;
+      scheduleRender();
+    }});
+
     document.addEventListener('input', (event) => {{
       if (event.target.id !== 'tool-runner-args') return;
       toolRunnerArgsText = event.target.value;
@@ -1622,7 +2045,23 @@ def build_dashboard_html(initial_state):
       }}
       if (event.target.id === 'tool-runner-execute') {{
         try {{
-          await runToolExecute(false);
+          await startToolTask();
+        }} catch (error) {{
+          setStatus(error.message);
+        }}
+        return;
+      }}
+      if (event.target.id === 'tool-runner-stop') {{
+        try {{
+          await stopToolTask();
+        }} catch (error) {{
+          setStatus(error.message);
+        }}
+        return;
+      }}
+      if (event.target.id === 'tool-runner-restart') {{
+        try {{
+          await restartToolTask();
         }} catch (error) {{
           setStatus(error.message);
         }}
@@ -1713,6 +2152,15 @@ def create_dashboard_server(
                 if path == "/api/tooling/status":
                     _send_json(self, 200, runtime.tooling_status())
                     return
+                if path == "/api/tooling/history":
+                    _send_json(self, 200, runtime.tool_history())
+                    return
+                if path.startswith("/api/tooling/task/"):
+                    fragment = path[len("/api/tooling/task/") :].strip("/")
+                    if not fragment or "/" in fragment:
+                        raise RuntimeError("Invalid tool task route.")
+                    _send_json(self, 200, runtime.tool_task(fragment))
+                    return
                 if path.startswith("/api/tooling/") and path.endswith("/detail"):
                     fragment = path[len("/api/tooling/") : -len("/detail")].strip("/")
                     _send_json(self, 200, runtime.tooling_detail(fragment))
@@ -1796,6 +2244,24 @@ def create_dashboard_server(
                         dry_run=bool(payload.get("dry_run", False)),
                     )
                     _send_json(self, 200, result)
+                    return
+                if path == "/api/tooling/task/start":
+                    result = runtime.start_tool_task(
+                        payload.get("index"),
+                        payload.get("tool_key"),
+                        action=payload.get("action", "run"),
+                        preset_key=payload.get("preset_key"),
+                        args=payload.get("args"),
+                    )
+                    _send_json(self, 200, result)
+                    return
+                if path.startswith("/api/tooling/task/") and path.endswith("/stop"):
+                    fragment = path[len("/api/tooling/task/") : -len("/stop")].strip("/")
+                    _send_json(self, 200, runtime.stop_tool_task(fragment))
+                    return
+                if path.startswith("/api/tooling/task/") and path.endswith("/restart"):
+                    fragment = path[len("/api/tooling/task/") : -len("/restart")].strip("/")
+                    _send_json(self, 200, runtime.restart_tool_task(fragment))
                     return
                 if path == "/api/diff":
                     result = runtime.compare_with(
