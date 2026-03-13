@@ -1,6 +1,6 @@
 import re
 
-from edit import ElfBinaryEditor, ElfEditError
+from edit import ElfEditError
 
 
 def _parse_int_literal(text, label):
@@ -21,7 +21,7 @@ class EditorWorkbenchScreen:
     """Factory wrapper so textual import is delayed until UI launch."""
 
     @staticmethod
-    def build(editor: ElfBinaryEditor):
+    def build(editor):
         from rich.text import Text
         from textual.containers import Horizontal, Vertical, VerticalScroll
         from textual.coordinate import Coordinate
@@ -144,7 +144,7 @@ class EditorWorkbenchScreen:
                 "wb_hex_length": "Hex length controls how many bytes are shown.",
                 "wb_hex_width": "Hex width is bytes per row (usually 8/16/32).",
                 "wb_selection_length": "Selection length used for click-select when no anchor range is active.",
-                "wb_disasm_section": "Disassembly section (default .text). Use 'all' for full output.",
+                "wb_disasm_section": "ELF section name, or leave the default when disassembling UF2 payload bytes.",
                 "wb_disasm_max_lines": "Maximum number of instruction lines to render.",
                 "wb_disasm_start": "Optional start address for disassembly range.",
                 "wb_disasm_stop": "Optional stop address (must be greater than start).",
@@ -177,6 +177,11 @@ class EditorWorkbenchScreen:
    - Or set [bold]sel_len[/bold] and click a byte to select that chunk immediately.
 5. Use [bold]Follow Sel[/bold] (button or [bold]F6[/bold]) to sync disassembly range from selected file bytes.
 6. Edit bytes in [bold]Patch Form[/bold], inspect synchronized highlights, then [bold]Save[/bold].
+
+[bold]UF2 Notes[/bold]
+- UF2 editing works against the reconstructed payload image, not raw 512-byte container blocks.
+- Selection summary shows target virtual address ranges when the UF2 block map provides them.
+- Disassembly is best-effort and currently optimized for RP2040 UF2 images.
 
 [bold]Disassembler-Style Features[/bold]
 - Interactive byte-cell selection in the hex grid.
@@ -301,15 +306,29 @@ class EditorWorkbenchScreen:
 
             def _refresh_title(self):
                 status = self.editor.status()
-                title = (
-                    f"[bold]ELF Editor Workbench[/bold]  "
-                    f"file={status['path']}  "
-                    f"class=ELF{status['elf_class']}  "
-                    f"endian={status['endianness']}  "
-                    f"dirty={status['dirty']}  "
-                    f"changes={status['change_count']}  "
-                    f"disassembler={status['disassembler']}"
-                )
+                if status.get("format") == "UF2":
+                    families = ", ".join(status.get("family_ids", [])) or "Unknown"
+                    title = (
+                        f"[bold]Binary Editor Workbench[/bold]  "
+                        f"file={status['path']}  "
+                        f"format=UF2  "
+                        f"blocks={status['blocks']}  "
+                        f"base=0x{int(status['base_address']):x}  "
+                        f"family={families}  "
+                        f"dirty={status['dirty']}  "
+                        f"changes={status['change_count']}  "
+                        f"disassembler={status['disassembler']}"
+                    )
+                else:
+                    title = (
+                        f"[bold]Binary Editor Workbench[/bold]  "
+                        f"file={status['path']}  "
+                        f"class=ELF{status['elf_class']}  "
+                        f"endian={status['endianness']}  "
+                        f"dirty={status['dirty']}  "
+                        f"changes={status['change_count']}  "
+                        f"disassembler={status['disassembler']}"
+                    )
                 self.query_one("#wb_title", Static).update(title)
 
             def _selection_range(self):

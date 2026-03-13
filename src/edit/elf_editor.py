@@ -794,6 +794,7 @@ class ElfBinaryEditor:
         header = self.get_elf_header()
         return {
             "path": str(self.path),
+            "format": "ELF",
             "size": len(self._data),
             "elf_class": self.elf_class,
             "endianness": self.endian_name,

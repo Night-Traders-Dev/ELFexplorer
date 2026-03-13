@@ -367,8 +367,9 @@ The workspace supports:
 - summary display (`show`)
 - advanced ELF editing:
   - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
-  - `edit-open <elf>` / `edit-close` / `edit-status`
+  - `edit-open <path>` / `edit-close` / `edit-status`
   - `edit-show-elf` / `edit-set-elf <field> <value>`
+  - `edit-show-uf2` / `edit-list-blocks` / `edit-show-block <idx>` / `edit-export-payload [path]`
   - `edit-list-phdr` / `edit-show-phdr <idx>` / `edit-set-phdr <idx> <field> <value>`
   - `edit-list-shdr` / `edit-show-shdr <idx>` / `edit-set-shdr <idx> <field> <value>`
   - `edit-hex [offset] [length] [width]`
@@ -381,7 +382,7 @@ The workspace supports:
 
 ### Split-Pane Editor Workbench
 
-After `edit-open <elf>`, run:
+After `edit-open <path>`, run:
 
 ```bash
 edit-ui
@@ -393,6 +394,14 @@ Workbench layout:
 - bottom-left: patch form (poke/hex/ascii/save/revert)
 - bottom-middle: in-app step-by-step how-to
 - bottom-right: hot tips panel (updates from hovered/focused controls)
+
+UF2 behavior:
+- `edit-open` now accepts ELF or UF2 images
+- for UF2, the editable byte stream is the reconstructed firmware payload, not the raw 512-byte UF2 container blocks
+- selection summaries include mapped target addresses when the UF2 block map provides them
+- `edit-show-uf2`, `edit-list-blocks`, and `edit-show-block` expose UF2 container metadata
+- `edit-export-payload` writes the reconstructed raw firmware image to disk for external tooling
+- UF2 disassembly is best-effort and currently tuned for RP2040-family images through `objdump -b binary`
 
 Hotkeys inside workbench:
 - `F5`: refresh hex + disassembly
@@ -424,6 +433,21 @@ edit-patch 0x40 de ad be ef
 edit-disasm .text 80
 edit-diff
 edit-save reports/hello_c.edited.elf
+```
+
+UF2 example:
+
+```bash
+python3 src/elfscan.py
+# inside workspace:
+edit-open /path/to/firmware.uf2
+edit-show-uf2
+edit-list-blocks
+edit-hex 0x0 0x100 16
+edit-patch 0x40 de ad be ef
+edit-disasm .text 80
+edit-export-payload reports/firmware.bin
+edit-save reports/firmware.edited.uf2
 ```
 
 ## Textual Report Palette

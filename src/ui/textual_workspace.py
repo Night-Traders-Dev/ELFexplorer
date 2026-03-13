@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from advanced.diffing import compare_reports, render_diff_plain
 from advanced.tooling import list_external_tools, render_external_tool_status_lines
-from edit import ElfBinaryEditor, ElfEditError
+from edit import ElfEditError, open_binary_editor
 from settings import load_theme_preference, save_theme_preference
 
 
@@ -33,6 +33,13 @@ def _fmt_value(value):
             return f"{value} (0x{value:x})"
         return str(value)
     return str(value)
+
+
+def _fmt_hex_or_unknown(value):
+    if value is None:
+        return "unknown"
+    numeric = int(value)
+    return f"0x{numeric:x}"
 
 
 def _collection_payload(reports):
@@ -133,11 +140,11 @@ def run_textual_workspace(callbacks):
                     "tool-list | tool-export <format> [path] | tool-status | tool-install <tool>\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
                     "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
-                    "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
+                    "edit-open <path> | edit-status | edit-show-elf | edit-show-uf2 | edit-list-phdr | edit-list-shdr | edit-list-blocks | edit-show-block <idx> | edit-hex [offset] [length] [width]\n"
                     "edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...> | edit-write-ascii <offset> <text>\n"
                     "edit-disasm [section] [max_lines] | edit-disasm-range <start> <stop> [section] [max_lines]\n"
                     "edit-set-elf <field> <value> | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>\n"
-                    "edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value> | edit-diff | edit-revert | edit-save [path] | edit-close | quit",
+                    "edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value> | edit-export-payload [path] | edit-diff | edit-revert | edit-save [path] | edit-close | quit",
                     id="help",
                 )
                 yield RichLog(id="log", wrap=True, markup=True)
@@ -188,19 +195,47 @@ def run_textual_workspace(callbacks):
 
         def _require_editor(self):
             if self.editor is None:
-                self._log("[red]No active editor session.[/red] Use: edit-open <elf>")
+                self._log("[red]No active editor session.[/red] Use: edit-open <path>")
                 return None
             return self.editor
+
+        def _require_elf_editor(self):
+            editor = self._require_editor()
+            if not editor:
+                return None
+            if editor.status().get("format") != "ELF":
+                self._log("[yellow]Current editor session is not an ELF image.[/yellow]")
+                return None
+            return editor
+
+        def _require_uf2_editor(self):
+            editor = self._require_editor()
+            if not editor:
+                return None
+            if editor.status().get("format") != "UF2":
+                self._log("[yellow]Current editor session is not a UF2 image.[/yellow]")
+                return None
+            return editor
 
         def _show_editor_status(self, editor):
             status = editor.status()
             self._log("[bold]Editor status:[/bold]")
             self._log(f"  path: {status['path']}")
+            self._log(f"  format: {status.get('format', 'ELF')}")
             self._log(f"  size: {status['size']} bytes")
-            self._log(f"  class: ELF{status['elf_class']}")
-            self._log(f"  endianness: {status['endianness']}")
-            self._log(f"  program_headers: {status['program_headers']}")
-            self._log(f"  section_headers: {status['section_headers']}")
+            if status.get("format") == "UF2":
+                self._log(f"  container_size: {status['container_size']} bytes")
+                self._log(f"  blocks: {status['blocks']}")
+                self._log(
+                    f"  address_range: {_fmt_hex_or_unknown(status.get('base_address'))} -> {_fmt_hex_or_unknown(status.get('end_address'))}"
+                )
+                families = ", ".join(status.get("family_ids", [])) or "Unknown"
+                self._log(f"  family_ids: {families}")
+            else:
+                self._log(f"  class: ELF{status['elf_class']}")
+                self._log(f"  endianness: {status['endianness']}")
+                self._log(f"  program_headers: {status['program_headers']}")
+                self._log(f"  section_headers: {status['section_headers']}")
             self._log(f"  dirty: {status['dirty']}")
             self._log(f"  change_count: {status['change_count']}")
             self._log(f"  disassembler: {status['disassembler']}")
@@ -263,9 +298,10 @@ def run_textual_workspace(callbacks):
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
                     self._log("tool-list | tool-export <format> [path] | tool-status | tool-install <tool>")
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
-                    self._log("edit-open <elf> | edit-close | edit-status")
+                    self._log("edit-open <path> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
                     self._log("edit-show-elf | edit-set-elf <field> <value>")
+                    self._log("edit-show-uf2 | edit-list-blocks | edit-show-block <idx> | edit-export-payload [path]")
                     self._log("edit-list-phdr | edit-show-phdr <idx> | edit-set-phdr <idx> <field> <value>")
                     self._log("edit-list-shdr | edit-show-shdr <idx> | edit-set-shdr <idx> <field> <value>")
                     self._log("edit-poke <offset> <byte> | edit-patch <offset> <hex-bytes...>")
@@ -468,9 +504,9 @@ def run_textual_workspace(callbacks):
 
                 if command == "edit-open":
                     if not args:
-                        self._log("[red]Usage:[/red] edit-open <elf>")
+                        self._log("[red]Usage:[/red] edit-open <path>")
                         return
-                    self.editor = ElfBinaryEditor(args[0])
+                    self.editor = open_binary_editor(args[0])
                     self._log(f"[green]Opened editor session:[/green] {self.editor.path}")
                     self._show_editor_status(self.editor)
                     return
@@ -496,7 +532,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-show-elf":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     header = editor.get_elf_header()
@@ -506,7 +542,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-set-elf":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     if len(args) < 2:
@@ -521,8 +557,66 @@ def run_textual_workspace(callbacks):
                     )
                     return
 
+                if command == "edit-show-uf2":
+                    editor = self._require_uf2_editor()
+                    if not editor:
+                        return
+                    overview = editor.get_uf2_overview()
+                    self._log("[bold]UF2 overview:[/bold]")
+                    self._log(f"  blocks: {overview['blocks']}")
+                    self._log(f"  payload_size: {overview['payload_size']} bytes")
+                    self._log(
+                        f"  address_range: {_fmt_hex_or_unknown(overview['base_address'])} -> {_fmt_hex_or_unknown(overview['end_address'])}"
+                    )
+                    if overview["family_ids"]:
+                        for family_id in overview["family_ids"]:
+                            self._log(f"  family_id: 0x{int(family_id):08x}")
+                    else:
+                        self._log("  family_id: Unknown")
+                    self._log(
+                        f"  declared_counts: {', '.join(str(item) for item in overview['declared_counts']) or 'Unknown'}"
+                    )
+                    return
+
+                if command == "edit-list-blocks":
+                    editor = self._require_uf2_editor()
+                    if not editor:
+                        return
+                    blocks = editor.list_blocks()
+                    if not blocks:
+                        self._log("No UF2 blocks found.")
+                        return
+                    self._log(f"[bold]UF2 blocks ({len(blocks)}):[/bold]")
+                    for block in blocks:
+                        family_text = (
+                            f" family=0x{int(block['family_id']):08x}"
+                            if block["family_id"] is not None
+                            else ""
+                        )
+                        self._log(
+                            f"  [{block['index']:>3}] block_no={block['block_no']} "
+                            f"payload_off=0x{block['payload_offset']:x} "
+                            f"target=0x{block['target_addr']:x} "
+                            f"size=0x{block['payload_size']:x} "
+                            f"raw_off=0x{block['raw_offset']:x}{family_text}"
+                        )
+                    return
+
+                if command == "edit-show-block":
+                    editor = self._require_uf2_editor()
+                    if not editor:
+                        return
+                    if not args:
+                        self._log("[red]Usage:[/red] edit-show-block <index>")
+                        return
+                    block = editor.get_block(_parse_int_literal(args[0], "index"))
+                    self._log(f"[bold]UF2 block [{block['index']}]:[/bold]")
+                    for key, value in block.items():
+                        self._log(f"  {key}: {_fmt_value(value)}")
+                    return
+
                 if command == "edit-list-phdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     headers = editor.list_program_headers()
@@ -542,7 +636,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-show-phdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     if not args:
@@ -556,7 +650,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-set-phdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     if len(args) < 3:
@@ -573,7 +667,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-list-shdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     sections = editor.list_section_headers(resolve_names=True)
@@ -592,7 +686,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-show-shdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     if not args:
@@ -606,7 +700,7 @@ def run_textual_workspace(callbacks):
                     return
 
                 if command == "edit-set-shdr":
-                    editor = self._require_editor()
+                    editor = self._require_elf_editor()
                     if not editor:
                         return
                     if len(args) < 3:
@@ -761,6 +855,15 @@ def run_textual_workspace(callbacks):
                     target = args[0] if args else None
                     saved = editor.save(path=target)
                     self._log(f"[green]Saved edited binary:[/green] {saved}")
+                    return
+
+                if command == "edit-export-payload":
+                    editor = self._require_uf2_editor()
+                    if not editor:
+                        return
+                    target = args[0] if args else None
+                    saved = editor.export_payload(path=target)
+                    self._log(f"[green]Exported UF2 payload:[/green] {saved}")
                     return
 
                 self._log(f"[red]Unknown command:[/red] {command}")

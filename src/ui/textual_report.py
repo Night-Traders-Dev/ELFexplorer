@@ -13,7 +13,7 @@ from advanced.tooling import (
     list_external_tools,
     render_external_tool_status_lines,
 )
-from edit import ElfBinaryEditor, ElfEditError
+from edit import ElfEditError, open_binary_editor
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
 from settings import load_theme_preference, save_theme_preference
@@ -85,7 +85,7 @@ def open_report_editor(report: Dict):
     path = Path(str(file_value)).expanduser()
     if not path.exists():
         raise FileNotFoundError(f"Binary not found: {path}")
-    return ElfBinaryEditor(path)
+    return open_binary_editor(path)
 
 
 def run_textual_report(report: Dict):

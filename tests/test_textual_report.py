@@ -3,8 +3,46 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from edit import ElfBinaryEditor, ElfEditError
+import struct
+
+from edit import ElfBinaryEditor, ElfEditError, Uf2BinaryEditor
 from ui.textual_report import default_report_export_path, open_report_editor
+from uf2.scan import (
+    UF2_BLOCK_SIZE,
+    UF2_FLAG_FAMILY_ID_PRESENT,
+    UF2_MAGIC_END,
+    UF2_MAGIC_START0,
+    UF2_MAGIC_START1,
+)
+
+
+def _make_uf2_bytes(payload, base_addr=0x10000000, family_id=0xE48BFF56):
+    chunks = [payload[index : index + 256] for index in range(0, len(payload), 256)]
+    if not chunks:
+        chunks = [b""]
+    total = len(chunks)
+    blocks = []
+
+    for block_no, chunk in enumerate(chunks):
+        block = bytearray(UF2_BLOCK_SIZE)
+        struct.pack_into(
+            "<IIIIIIII",
+            block,
+            0,
+            UF2_MAGIC_START0,
+            UF2_MAGIC_START1,
+            UF2_FLAG_FAMILY_ID_PRESENT,
+            base_addr + (block_no * 256),
+            len(chunk),
+            block_no,
+            total,
+            family_id,
+        )
+        block[32 : 32 + len(chunk)] = chunk
+        struct.pack_into("<I", block, 508, UF2_MAGIC_END)
+        blocks.append(bytes(block))
+
+    return b"".join(blocks)
 
 
 def _sample_report(file_path="/tmp/firmware.uf2", mode="important"):
@@ -48,6 +86,15 @@ class TextualReportPathTests(unittest.TestCase):
         editor = open_report_editor(report)
         self.assertIsInstance(editor, ElfBinaryEditor)
         self.assertEqual(Path(editor.path), sample)
+
+    def test_open_report_editor_for_valid_uf2_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample = Path(tmp_dir) / "firmware.uf2"
+            sample.write_bytes(_make_uf2_bytes(b"pico-sdk\x00hello"))
+            report = _sample_report(str(sample), mode="general")
+            editor = open_report_editor(report)
+            self.assertIsInstance(editor, Uf2BinaryEditor)
+            self.assertEqual(Path(editor.path), sample)
 
     def test_open_report_editor_rejects_non_elf_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

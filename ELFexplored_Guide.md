@@ -425,11 +425,12 @@ Workspace commands:
 - `diff <other-file> [mode]`
 - `diff-ui <other-file> [mode]`
 - `show`
-- `edit-open <elf>`
+- `edit-open <path>`
 - `edit-ui`
 - `edit-close`
 - `edit-status`
 - `edit-show-elf`
+- `edit-show-uf2`
 - `edit-set-elf <field> <value>`
 - `edit-list-phdr`
 - `edit-show-phdr <index>`
@@ -437,6 +438,8 @@ Workspace commands:
 - `edit-list-shdr`
 - `edit-show-shdr <index>`
 - `edit-set-shdr <index> <field> <value>`
+- `edit-list-blocks`
+- `edit-show-block <index>`
 - `edit-hex [offset] [length] [width]`
 - `edit-poke <offset> <byte>`
 - `edit-patch <offset> <hex-bytes...>`
@@ -446,17 +449,23 @@ Workspace commands:
 - `edit-diff`
 - `edit-revert`
 - `edit-save [path]`
+- `edit-export-payload [path]`
 - `help`
 - `quit`
 
 ### 11.1 Advanced ELF Edit Mode Behavior
 
 Edit mode is session-based:
-1. open an ELF with `edit-open`
+1. open an ELF or UF2 image with `edit-open`
 2. optionally launch the dedicated split-pane workbench via `edit-ui`
 3. inspect/update headers in memory
 4. review pending edits with `edit-diff`
 5. persist with `edit-save`, or discard with `edit-revert`
+
+Format-specific behavior:
+- ELF sessions expose ELF/program/section header mutation commands.
+- UF2 sessions expose UF2 block inspection/export commands.
+- For UF2, the editable byte stream is the reconstructed payload image, while block/container metadata remains available through dedicated UF2 commands.
 
 ### 11.2 Split-Pane Editor Workbench
 
@@ -481,10 +490,17 @@ Keyboard actions in workbench:
 - `Ctrl+R`: revert in-memory edits
 - `Esc`: return to workspace
 
+UF2-specific workbench notes:
+- the title bar switches to UF2 mode and displays block count, base address, and family identifiers
+- selection summaries include mapped target virtual addresses when a selected payload range maps cleanly to UF2 target addresses
+- disassembly is best-effort for raw payload images and is currently optimized for RP2040 UF2 inputs
+- `edit-show-uf2`, `edit-list-blocks`, `edit-show-block`, and `edit-export-payload` support container-oriented inspection workflows outside the split-pane editor
+
 Safety and constraints:
 - edits are in-memory until explicitly saved
 - integer range checks are enforced per field width
 - index bounds are enforced for program/section header operations
+- UF2 payload edits are bounds-checked against the reconstructed payload image
 - default save target is `<original_name>.modified`
 - unsupported/invalid operations raise explicit edit errors
 
