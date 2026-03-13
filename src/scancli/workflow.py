@@ -29,6 +29,7 @@ from reporting.persistence import (
     save_report,
 )
 from reporting.tasks import run_task_file
+from settings import load_tool_path, load_tool_paths
 
 from .render import display_report, run_textual_workspace
 from .scan import build_scan_report, is_supported_binary, report_timestamp
@@ -243,8 +244,13 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
         "list_tool_plugins": list_tool_plugin_formats,
         "default_tool_plugin_path": default_tool_plugin_path,
         "export_tool_plugin": export_tool_plugin,
-        "tooling_snapshot": collect_external_tool_status,
-        "tooling_detail": describe_external_tool,
+        "tooling_snapshot": lambda: collect_external_tool_status(
+            executable_overrides=load_tool_paths()
+        ),
+        "tooling_detail": lambda tool_key: describe_external_tool(
+            tool_key,
+            executable_override=load_tool_path(tool_key),
+        ),
         "download_external_tool": download_external_tool,
         "install_external_tool": install_external_tool,
         "show_report": lambda report: display_report(report, ui_mode=ui_mode, explicit_ui=explicit_ui),

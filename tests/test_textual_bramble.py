@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import sys
 
@@ -52,6 +53,18 @@ class TextualBrambleTests(unittest.IsolatedAsyncioTestCase):
             preview = str(screen.query_one("#bramble_preview", Static).content)
             self.assertIn(override, preview)
             self.assertIn(target, preview)
+
+    async def test_bramble_screen_loads_saved_executable_override(self):
+        target = "/tmp/fw.uf2"
+        saved_override = "/custom/tools/bramble"
+        with patch("ui.textual_bramble.load_tool_path", return_value=saved_override):
+            screen = BrambleScreenFactory.build(target_path=target)
+        app = _BrambleTestApp(screen)
+
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            executable = screen.query_one("#bramble_executable", Input)
+            self.assertEqual(executable.value, saved_override)
 
 
 if __name__ == "__main__":

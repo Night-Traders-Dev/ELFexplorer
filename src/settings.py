@@ -4,6 +4,7 @@ from pathlib import Path
 
 DEFAULT_SETTINGS = {
     "theme": "textual-dark",
+    "tool_paths": {},
 }
 
 
@@ -49,3 +50,29 @@ def save_theme_preference(theme: str) -> Path:
     settings["theme"] = str(theme)
     return save_settings(settings)
 
+
+def load_tool_paths() -> dict:
+    settings = load_settings()
+    tool_paths = settings.get("tool_paths", {})
+    if not isinstance(tool_paths, dict):
+        return {}
+    return {str(key): str(value) for key, value in tool_paths.items() if value}
+
+
+def load_tool_path(tool_key: str) -> str | None:
+    return load_tool_paths().get(str(tool_key))
+
+
+def save_tool_path(tool_key: str, path: str | None) -> Path:
+    settings = load_settings()
+    tool_paths = settings.get("tool_paths", {})
+    if not isinstance(tool_paths, dict):
+        tool_paths = {}
+    normalized_key = str(tool_key)
+    normalized_path = str(path).strip() if path is not None else ""
+    if normalized_path:
+        tool_paths[normalized_key] = normalized_path
+    else:
+        tool_paths.pop(normalized_key, None)
+    settings["tool_paths"] = tool_paths
+    return save_settings(settings)

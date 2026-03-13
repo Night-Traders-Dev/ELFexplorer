@@ -20,7 +20,8 @@ from advanced.tooling import (
 from edit import ElfEditError, open_binary_editor
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
-from settings import load_theme_preference, save_theme_preference
+from settings import load_theme_preference, load_tool_path, load_tool_paths, save_theme_preference
+from ui.themes import register_elfexplorer_themes
 from version import get_version
 
 
@@ -165,6 +166,7 @@ def run_textual_report(report: Dict):
             super().__init__()
             self.report = dict(initial_report)
             self.tooling_snapshot = None
+            register_elfexplorer_themes(self)
 
         def _apply_saved_theme(self):
             saved_theme = load_theme_preference()
@@ -338,14 +340,20 @@ def run_textual_report(report: Dict):
                 lines.append("Install methods:")
                 for tool_key in sorted(list_external_tools()):
                     lines.extend(
-                        render_external_tool_detail_lines(tool_key, environment=snapshot["environment"])
+                        render_external_tool_detail_lines(
+                            tool_key,
+                            environment=snapshot["environment"],
+                            executable_override=load_tool_path(tool_key),
+                        )
                     )
                     lines.append("")
             tooling_status.update("\n".join(lines).rstrip())
 
         def _fill_bramble_tab(self):
             widget = self.query_one("#bramble_summary", Static)
-            snapshot = self.tooling_snapshot or collect_external_tool_status()
+            snapshot = self.tooling_snapshot or collect_external_tool_status(
+                executable_overrides=load_tool_paths()
+            )
             bramble_status = next(
                 (item for item in snapshot.get("tools", []) if item.get("key") == "bramble"),
                 None,
@@ -417,14 +425,14 @@ def run_textual_report(report: Dict):
             )
 
         def _refresh_tooling_snapshot(self):
-            self.tooling_snapshot = collect_external_tool_status()
+            self.tooling_snapshot = collect_external_tool_status(executable_overrides=load_tool_paths())
             self._refresh_view()
 
         def _launch_startup_splash(self):
             def runner(emit):
                 emit({"kind": "log", "message": "Applying saved UI theme", "progress": 10.0})
                 emit({"kind": "log", "message": "Collecting external-tool status", "progress": 30.0})
-                snapshot = collect_external_tool_status()
+                snapshot = collect_external_tool_status(executable_overrides=load_tool_paths())
                 emit({"kind": "log", "message": "Preparing integration panels", "progress": 85.0})
                 return {"tooling_snapshot": snapshot, "message": "Startup checks complete."}
 
@@ -698,7 +706,7 @@ def run_textual_report(report: Dict):
         def action_check_external_tools(self):
             def runner(emit):
                 emit({"kind": "log", "message": "Refreshing external-tool status", "progress": 15.0})
-                snapshot = collect_external_tool_status()
+                snapshot = collect_external_tool_status(executable_overrides=load_tool_paths())
                 emit({"kind": "log", "message": "Status refresh complete", "progress": 100.0})
                 return snapshot
 
@@ -718,8 +726,14 @@ def run_textual_report(report: Dict):
             )
 
         def action_show_external_tool_info(self, tool_key: str):
-            snapshot = self.tooling_snapshot or collect_external_tool_status()
-            detail_lines = render_external_tool_detail_lines(tool_key, environment=snapshot["environment"])
+            snapshot = self.tooling_snapshot or collect_external_tool_status(
+                executable_overrides=load_tool_paths()
+            )
+            detail_lines = render_external_tool_detail_lines(
+                tool_key,
+                environment=snapshot["environment"],
+                executable_override=load_tool_path(tool_key),
+            )
             self._refresh_view()
             self.notify(
                 f"{detail_lines[0]} | See Integrations tab for full install details.",

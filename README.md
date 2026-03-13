@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.8-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.9-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,16 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.9
+
+- Persisted third-party tool path overrides in `settings.conf` so the Bramble executable path survives app restarts.
+- Applied saved tool-path overrides to external-tool status snapshots, install-detail views, the generic tool workbench, and the dedicated Bramble workspace.
+- Added custom ELFexplorer Textual themes:
+  - `elfexplorer-cinder`
+  - `elfexplorer-oceanic`
+  - `elfexplorer-forge`
+  - `elfexplorer-verdant`
 
 ## What Changed in 0.11.8
 
@@ -599,9 +609,23 @@ Quick keys in report view:
 
 ELFexplorer stores user UI preferences in JSON:
 - file: `settings.conf` (repository root)
-- current persisted key: `theme`
+- current persisted keys:
+  - `theme`
+  - `tool_paths.bramble`
 
 When you change theme from Textual command palette (`Ctrl+P` -> Theme), the selected theme is saved and automatically reused in both Textual workspace and Textual report views.
+
+Custom ELFexplorer themes now available in the Textual theme palette:
+- `elfexplorer-cinder`
+- `elfexplorer-oceanic`
+- `elfexplorer-forge`
+- `elfexplorer-verdant`
+
+When you set the Bramble executable override in the dedicated Bramble workspace, the selected path is also persisted and reused across:
+- the dedicated Bramble workspace
+- external-tool status snapshots
+- install/detail panels
+- the generic tool workbench when `bramble` is selected
 
 ## Task Files
 

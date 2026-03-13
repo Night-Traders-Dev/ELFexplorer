@@ -12,6 +12,7 @@ from advanced.tooling import (
     render_bramble_feature_lines,
     run_external_tool_command,
 )
+from settings import load_tool_path, save_tool_path
 
 
 class BrambleScreenFactory:
@@ -124,6 +125,7 @@ class BrambleScreenFactory:
                 super().__init__()
                 self.report = report
                 self.current_target_path = str(Path(target_path).expanduser()) if target_path else ""
+                self._saved_executable_path = load_tool_path("bramble") or ""
                 self._events: "queue.Queue[dict]" = queue.Queue()
                 self._busy = False
                 self._current_result = None
@@ -139,6 +141,7 @@ class BrambleScreenFactory:
                                 with Vertical(id="bramble_controls"):
                                     yield Static("Run Settings", classes="bramble_pane_title")
                                     yield Input(
+                                        value=self._saved_executable_path,
                                         placeholder="Bramble executable path (optional override)",
                                         id="bramble_executable",
                                         classes="bramble_input",
@@ -206,6 +209,13 @@ class BrambleScreenFactory:
             def _selected_executable_path(self) -> str | None:
                 value = self.query_one("#bramble_executable", Input).value.strip()
                 return value or None
+
+            def _persist_executable_path(self) -> None:
+                current = self._selected_executable_path() or ""
+                if current == self._saved_executable_path:
+                    return
+                save_tool_path("bramble", current or None)
+                self._saved_executable_path = current
 
             def _checkbox(self, widget_id: str) -> bool:
                 return bool(self.query_one(f"#{widget_id}", Checkbox).value)
@@ -363,6 +373,7 @@ class BrambleScreenFactory:
                     self.notify(str(exc), title="Bramble", severity="warning")
                     self._refresh_preview(mode=mode)
                     return
+                self._persist_executable_path()
 
                 def runner(emit):
                     return run_external_tool_command(
@@ -382,6 +393,7 @@ class BrambleScreenFactory:
                     self.notify(str(exc), title="Bramble", severity="warning")
                     self._refresh_preview(mode="run")
                     return
+                self._persist_executable_path()
 
                 def runner(emit):
                     return launch_external_tool(
@@ -395,9 +407,11 @@ class BrambleScreenFactory:
                 self._start_background(runner, "Launching Bramble externally")
 
             def action_close_screen(self) -> None:
+                self._persist_executable_path()
                 self.dismiss()
 
             def action_refresh_status(self) -> None:
+                self._persist_executable_path()
                 self._refresh_status()
                 self._refresh_preview()
                 self._populate_examples()
@@ -417,6 +431,13 @@ class BrambleScreenFactory:
                     self._refresh_status()
                     self._refresh_preview()
                     self._populate_examples()
+
+            def on_input_submitted(self, event: Input.Submitted) -> None:
+                if event.input.id == "bramble_executable":
+                    self._persist_executable_path()
+                    self.notify("Saved Bramble executable override.", title="Bramble", severity="information")
+                    self._refresh_status()
+                    self._refresh_preview()
 
             def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
                 if event.checkbox.id and event.checkbox.id.startswith("bramble_"):

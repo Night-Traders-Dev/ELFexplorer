@@ -5,6 +5,7 @@ from advanced.diffing import compare_reports, render_diff_plain
 from advanced.tooling import list_external_tools, render_external_tool_status_lines
 from edit import ElfEditError, open_binary_editor
 from settings import load_theme_preference, save_theme_preference
+from ui.themes import register_elfexplorer_themes
 from version import get_version
 
 
@@ -121,6 +122,7 @@ def run_textual_workspace(callbacks):
             self.last_report = None
             self.editor = None
             self.tooling_snapshot = None
+            register_elfexplorer_themes(self)
 
         def _apply_saved_theme(self):
             saved_theme = load_theme_preference()

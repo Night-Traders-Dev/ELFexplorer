@@ -379,11 +379,19 @@ User-facing UI preferences are stored in `settings.conf` (JSON, repository root)
 
 Current persisted preference:
 - `theme`: Textual theme selected via command palette
+- `tool_paths.bramble`: persisted executable override for the Bramble emulator binary
 
 Behavior:
 - on Textual app startup (workspace/report), saved theme is loaded and applied if available
 - on theme change, new value is written back to `settings.conf`
+- on Bramble executable override save, the selected path is written back to `settings.conf`
 - startup splash is shown after theme application so background checks can run without freezing the UI
+
+Custom ELFexplorer themes:
+- `elfexplorer-cinder`
+- `elfexplorer-oceanic`
+- `elfexplorer-forge`
+- `elfexplorer-verdant`
 
 ### 10.7 Advanced Analysis Flags
 
@@ -559,6 +567,7 @@ Tabs:
 Controls currently exposed:
 - scrollable settings pane for smaller terminals and laptops
 - Bramble executable override field so a custom binary path can be selected explicitly
+- persisted Bramble executable override so the selected binary path survives app restarts and is reused in status/tooling views
 - target UF2/ELF path
 - clock override
 - GDB port

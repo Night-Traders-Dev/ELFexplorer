@@ -11,6 +11,7 @@ from advanced.tooling import (
     list_external_tools,
     run_external_tool_command,
 )
+from settings import load_tool_path
 
 
 TOOL_EXPORT_FORMATS = {
@@ -162,7 +163,11 @@ class ToolWorkbenchScreenFactory:
                 table.clear(columns=True)
                 table.add_columns("Tool", "Installed", "Mode")
                 for tool_key in self._tool_keys:
-                    model = get_external_tool_workbench_model(tool_key, target_path=self.current_target_path or None)
+                    model = get_external_tool_workbench_model(
+                        tool_key,
+                        target_path=self.current_target_path or None,
+                        executable_override=load_tool_path(tool_key),
+                    )
                     status = model["status"]
                     mode = "CLI" if model["cli_friendly"] else "GUI"
                     table.add_row(status["label"], "yes" if status["installed"] else "no", mode)
@@ -211,6 +216,7 @@ class ToolWorkbenchScreenFactory:
                 model = get_external_tool_workbench_model(
                     self.current_tool_key,
                     target_path=self._selected_target_path(),
+                    executable_override=load_tool_path(self.current_tool_key),
                 )
                 status = model["status"]
                 launch_text = " ".join(model.get("launch_args", [])) or "<none>"
@@ -218,6 +224,7 @@ class ToolWorkbenchScreenFactory:
                     f"Tool: {status['label']} ({self.current_tool_key})",
                     f"Installed: {'yes' if status['installed'] else 'no'}",
                     f"Executable: {status.get('path') or 'not found'}",
+                    f"Executable override: {status.get('override_path') or 'auto-detect'}",
                     f"Version: {status.get('version') or 'unknown'}",
                     f"Mode: {'CLI/headless friendly' if model['cli_friendly'] else 'GUI-centric'}",
                     f"Default launch args: {launch_text}",
@@ -306,6 +313,7 @@ class ToolWorkbenchScreenFactory:
                         args=args_value,
                         target_path=target_path,
                         event_cb=emit,
+                        executable_override=load_tool_path(self.current_tool_key),
                     )
 
                 self._start_background(runner, f"Running args for {self.current_tool_key}: {args_value}")
@@ -324,6 +332,7 @@ class ToolWorkbenchScreenFactory:
                         args=args,
                         target_path=target_path,
                         event_cb=emit,
+                        executable_override=load_tool_path(self.current_tool_key),
                     )
 
                 self._start_background(
@@ -339,6 +348,7 @@ class ToolWorkbenchScreenFactory:
                         self.current_tool_key,
                         target_path=target_path,
                         event_cb=emit,
+                        executable_override=load_tool_path(self.current_tool_key),
                     )
 
                 self._start_background(runner, f"Launching {self.current_tool_key}")

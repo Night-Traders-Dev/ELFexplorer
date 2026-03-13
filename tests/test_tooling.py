@@ -137,6 +137,28 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(detail["install_methods"][0]["manager"], "brew")
         self.assertIn("apt-get", " ".join(detail["host_install_command"]))
 
+    def test_describe_external_tool_accepts_executable_override(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        with mock.patch("advanced.tooling.Path.exists", return_value=True), mock.patch(
+            "advanced.tooling._probe_version",
+            return_value="Bramble test version",
+        ):
+            detail = tooling.describe_external_tool(
+                "bramble",
+                environment=environment,
+                executable_override="/opt/bramble/bin/bramble",
+            )
+
+        self.assertEqual(detail["status"]["override_path"], "/opt/bramble/bin/bramble")
+        self.assertTrue(detail["status"]["override_active"])
+
     def test_download_external_tool_dry_run_returns_url_and_path(self):
         environment = {
             "os": "linux",
@@ -301,6 +323,50 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(len(snapshot["tools"]), len(tooling.THIRD_PARTY_TOOLS))
         ghidra = next(item for item in snapshot["tools"] if item["key"] == "ghidra")
         self.assertIn("Status probe failed", ghidra["manual_install"])
+
+    def test_collect_external_tool_status_passes_saved_overrides(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        calls = []
+
+        def fake_status(tool_key, environment=None, executable_override=None):
+            calls.append((tool_key, executable_override))
+            meta = tooling.THIRD_PARTY_TOOLS[tool_key]
+            return {
+                "key": tool_key,
+                "label": meta["label"],
+                "installed": bool(executable_override),
+                "path": executable_override,
+                "detected_via": "override" if executable_override else None,
+                "version": None,
+                "install_supported": False,
+                "install_manager": None,
+                "install_manager_label": None,
+                "install_command": None,
+                "manual_install": meta.get("manual_install"),
+                "homepage": meta.get("homepage"),
+                "download_url": meta.get("download_url"),
+                "download_supported": False,
+                "portable_install_supported": False,
+                "local_tool_root": "/tmp/tools",
+                "local_bin_root": "/tmp/bin",
+            }
+
+        with mock.patch("advanced.tooling.get_external_tool_status", side_effect=fake_status):
+            snapshot = tooling.collect_external_tool_status(
+                environment=environment,
+                executable_overrides={"bramble": "/custom/bramble"},
+            )
+
+        bramble = next(item for item in snapshot["tools"] if item["key"] == "bramble")
+        self.assertEqual(bramble["path"], "/custom/bramble")
+        self.assertIn(("bramble", "/custom/bramble"), calls)
 
     def test_get_external_tool_workbench_model_exposes_presets(self):
         environment = {

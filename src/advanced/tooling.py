@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11.8 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.11.9 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {
@@ -1661,9 +1661,13 @@ def launch_external_tool(
     }
 
 
-def describe_external_tool(tool_key, environment=None):
+def describe_external_tool(tool_key, environment=None, executable_override=None):
     environment = environment or detect_host_environment()
-    status = get_external_tool_status(tool_key, environment=environment)
+    status = get_external_tool_status(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
     meta = THIRD_PARTY_TOOLS[tool_key]
     host_command, host_manager = build_install_command(tool_key, environment=environment, interactive=True)
     download_spec = None
@@ -1688,13 +1692,19 @@ def describe_external_tool(tool_key, environment=None):
     }
 
 
-def render_external_tool_detail_lines(tool_key, environment=None):
-    detail = describe_external_tool(tool_key, environment=environment)
+def render_external_tool_detail_lines(tool_key, environment=None, executable_override=None):
+    detail = describe_external_tool(
+        tool_key,
+        environment=environment,
+        executable_override=executable_override,
+    )
     status = detail["status"]
     lines = [f"{status['label']} ({tool_key})"]
     lines.append(f"  installed: {'yes' if status['installed'] else 'no'}")
     if status.get("path"):
         lines.append(f"  path: {status['path']}")
+    if status.get("override_path"):
+        lines.append(f"  override_path: {status['override_path']}")
     if status.get("version"):
         lines.append(f"  version: {status['version']}")
     if detail.get("homepage"):
@@ -1729,14 +1739,20 @@ def render_external_tool_detail_lines(tool_key, environment=None):
     return lines
 
 
-def collect_external_tool_status(environment=None):
+def collect_external_tool_status(environment=None, executable_overrides=None):
     environment = environment or detect_host_environment()
+    executable_overrides = executable_overrides or {}
     tool_keys = list(THIRD_PARTY_TOOLS)
     max_workers = min(4, max(1, len(tool_keys)))
     indexed = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(get_external_tool_status, tool_key, environment=environment): (index, tool_key)
+            executor.submit(
+                get_external_tool_status,
+                tool_key,
+                environment=environment,
+                executable_override=executable_overrides.get(tool_key),
+            ): (index, tool_key)
             for index, tool_key in enumerate(tool_keys)
         }
         for future, (index, tool_key) in futures.items():
