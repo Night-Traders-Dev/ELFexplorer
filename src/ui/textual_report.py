@@ -7,6 +7,12 @@ from advanced.toolbridge import (
     export_tool_plugin,
     list_tool_plugin_formats,
 )
+from advanced.tooling import (
+    collect_external_tool_status,
+    install_external_tool,
+    list_external_tools,
+    render_external_tool_status_lines,
+)
 from edit import ElfBinaryEditor, ElfEditError
 from reporting.export import export_report_markdown, export_report_pdf
 from scancli.scan import build_scan_report
@@ -117,6 +123,11 @@ def run_textual_report(report: Dict):
             padding: 1 2;
             border: round $primary;
         }
+        #tooling_status {
+            height: auto;
+            padding: 1 2;
+            border: round $secondary;
+        }
         """
 
         BINDINGS = [
@@ -163,6 +174,7 @@ def run_textual_report(report: Dict):
                     with TabPane("Integrations"):
                         yield Static("", id="integrations_note")
                         yield DataTable(id="integrations_table")
+                        yield Static("", id="tooling_status")
             yield Footer()
 
         def get_system_commands(self, screen: Screen):
@@ -177,6 +189,17 @@ def run_textual_report(report: Dict):
                 "Save current report as PDF in ./reports/",
                 self.action_export_pdf,
             )
+            yield SystemCommand(
+                "Tooling: Check External Tools",
+                "Detect host package manager and installed reverse-engineering tools",
+                self.action_check_external_tools,
+            )
+            for tool_key, meta in sorted(list_external_tools().items()):
+                yield SystemCommand(
+                    f"Tooling: Install {meta['label']}",
+                    f"Install {meta['label']} using the detected package manager when supported",
+                    lambda tool_key=tool_key: self.action_install_external_tool(tool_key),
+                )
             yield SystemCommand(
                 "Integrations: Export Binary Ninja Script",
                 "Save Binary Ninja import script in ./reports/",
@@ -244,6 +267,7 @@ def run_textual_report(report: Dict):
         def _fill_integrations_table(self):
             note = self.query_one("#integrations_note", Static)
             table = self.query_one("#integrations_table", DataTable)
+            tooling_status = self.query_one("#tooling_status", Static)
             table.cursor_type = "row"
             table.clear(columns=True)
             table.add_columns("Format", "Label", "Description", "Default Export Path")
@@ -253,6 +277,8 @@ def run_textual_report(report: Dict):
                 "External-tool exports are generated from the current report's symbols, sections, and "
                 "comments. Use the command palette to export scripts for disassemblers and memory-mapping tools."
             )
+            snapshot = collect_external_tool_status()
+            tooling_status.update("\n".join(render_external_tool_status_lines(snapshot)))
 
         def _refresh_view(self):
             summary = self.query_one("#summary", Static)
@@ -458,6 +484,26 @@ def run_textual_report(report: Dict):
                     severity="error",
                 )
 
+        def _install_external_tool(self, tool_key: str):
+            result = install_external_tool(tool_key)
+            self._refresh_view()
+            if result.get("ok"):
+                self.notify(result["message"], title="Tooling", severity="information")
+            else:
+                command = result.get("command")
+                if command:
+                    self.notify(
+                        f"{result['message']} Command: {' '.join(command)}",
+                        title="Tooling",
+                        severity="warning",
+                    )
+                else:
+                    self.notify(result["message"], title="Tooling", severity="warning")
+
+        def action_check_external_tools(self):
+            self._refresh_view()
+            self.notify("External tool status refreshed.", title="Tooling", severity="information")
+
         def action_export_markdown(self):
             self._export_markdown()
 
@@ -481,6 +527,9 @@ def run_textual_report(report: Dict):
 
         def action_export_tool_imhex(self):
             self._export_tool_plugin("imhex")
+
+        def action_install_external_tool(self, tool_key: str):
+            self._install_external_tool(tool_key)
 
         def action_rescan_current_mode(self):
             self._rescan(mode=self.report.get("mode", "general"))

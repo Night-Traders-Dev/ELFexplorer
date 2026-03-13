@@ -11,6 +11,19 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from advanced.tooling import (
+    collect_external_tool_status,
+    install_external_tool,
+    list_external_tools,
+)
 
 
 DEPENDENCY_GROUPS = {
@@ -90,6 +103,23 @@ def parse_args(argv=None):
         action="store_true",
         help="Print available groups and packages, then exit.",
     )
+    parser.add_argument(
+        "--print-tools",
+        action="store_true",
+        help="Print known external tool integrations and exit.",
+    )
+    parser.add_argument(
+        "--check-tools",
+        action="store_true",
+        help="Detect host OS/package manager and print external tool status.",
+    )
+    parser.add_argument(
+        "--install-tool",
+        action="append",
+        choices=tuple(sorted(list_external_tools())),
+        default=[],
+        help="Install one or more external tools if supported on this host.",
+    )
     return parser.parse_args(argv)
 
 
@@ -101,6 +131,49 @@ def main(argv=None):
         for group_name, packages in DEPENDENCY_GROUPS.items():
             print(f"  {group_name}: {', '.join(packages)}")
         return 0
+
+    if args.print_tools:
+        print("Known external tools:")
+        for key, meta in sorted(list_external_tools().items()):
+            print(f"  {key}: {meta['label']}")
+        if not args.check_tools and not args.install_tool:
+            return 0
+
+    if args.check_tools:
+        snapshot = collect_external_tool_status()
+        environment = snapshot["environment"]
+        print(f"Host OS: {environment.get('os_label', 'Unknown')}")
+        print(f"Package manager: {environment.get('primary_package_manager_label', 'None detected')}")
+        if environment.get("distro"):
+            print(f"Linux distro: {environment['distro']}")
+        print("External tool status:")
+        for item in snapshot["tools"]:
+            if item["installed"]:
+                version = f" version={item['version']}" if item.get("version") else ""
+                print(f"  - {item['label']}: installed at {item['path']}{version}")
+            elif item["install_supported"]:
+                print(f"  - {item['label']}: missing, install with {item['install_command']}")
+            else:
+                print(f"  - {item['label']}: missing, manual install required")
+        if not args.install_tool:
+            return 0
+
+    install_failures = 0
+    for tool_key in args.install_tool:
+        result = install_external_tool(tool_key, dry_run=args.dry_run)
+        print(f"Tool: {result['status']['label']}")
+        print(f"Result: {result['message']}")
+        command = result.get("command")
+        if command:
+            print("Command:", " ".join(command))
+        output = result.get("output")
+        if output:
+            print(output)
+        if not result["ok"]:
+            install_failures += 1
+
+    if args.install_tool:
+        return 1 if install_failures else 0
 
     selected_groups = list(PROFILE_GROUPS[args.profile])
     for group in args.group:

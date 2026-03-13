@@ -3,6 +3,7 @@ import io
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 
 def _load_install_deps_module():
@@ -47,6 +48,60 @@ class InstallDepsTests(unittest.TestCase):
         self.assertIn("Available dependency groups:", output)
         self.assertIn("core:", output)
         self.assertIn("dev:", output)
+
+    def test_main_print_tools(self):
+        capture = io.StringIO()
+        with redirect_stdout(capture):
+            rc = self.mod.main(["--print-tools"])
+        self.assertEqual(rc, 0)
+        output = capture.getvalue()
+        self.assertIn("Known external tools:", output)
+        self.assertIn("ghidra", output)
+        self.assertIn("radare2", output)
+
+    def test_main_check_tools_prints_status(self):
+        snapshot = {
+            "environment": {
+                "os_label": "Linux",
+                "primary_package_manager_label": "APT",
+                "distro": "Ubuntu 24.04 LTS",
+            },
+            "tools": [
+                {"label": "Ghidra", "installed": False, "install_supported": False},
+                {
+                    "label": "radare2",
+                    "installed": False,
+                    "install_supported": True,
+                    "install_command": "sudo apt-get install -y radare2",
+                },
+            ],
+        }
+        capture = io.StringIO()
+        with mock.patch.object(self.mod, "collect_external_tool_status", return_value=snapshot), redirect_stdout(
+            capture
+        ):
+            rc = self.mod.main(["--check-tools"])
+        self.assertEqual(rc, 0)
+        output = capture.getvalue()
+        self.assertIn("Host OS: Linux", output)
+        self.assertIn("Package manager: APT", output)
+        self.assertIn("radare2: missing, install with", output)
+
+    def test_main_install_tool_dry_run(self):
+        result = {
+            "ok": True,
+            "message": "Dry run: sudo apt-get install -y radare2",
+            "status": {"label": "radare2"},
+            "command": ["sudo", "apt-get", "install", "-y", "radare2"],
+            "output": "",
+        }
+        capture = io.StringIO()
+        with mock.patch.object(self.mod, "install_external_tool", return_value=result), redirect_stdout(capture):
+            rc = self.mod.main(["--install-tool", "radare2", "--dry-run"])
+        self.assertEqual(rc, 0)
+        output = capture.getvalue()
+        self.assertIn("Tool: radare2", output)
+        self.assertIn("Command: sudo apt-get install -y radare2", output)
 
 
 if __name__ == "__main__":

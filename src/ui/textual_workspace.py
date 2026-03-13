@@ -2,6 +2,7 @@ import shlex
 from datetime import datetime, timezone
 
 from advanced.diffing import compare_reports, render_diff_plain
+from advanced.tooling import list_external_tools, render_external_tool_status_lines
 from edit import ElfBinaryEditor, ElfEditError
 from settings import load_theme_preference, save_theme_preference
 
@@ -129,7 +130,7 @@ def run_textual_workspace(callbacks):
                     "load <scan.json> | load-collection <collection.json> | list-saved\n"
                     "save [path] | save-collection [path] | export-md <path> | export-pdf <path>\n"
                     "export-collection-md <path> | export-collection-pdf <path> | show\n"
-                    "tool-list | tool-export <format> [path]\n"
+                    "tool-list | tool-export <format> [path] | tool-status | tool-install <tool>\n"
                     "diff <other-file> [mode] | diff-ui <other-file> [mode]\n"
                     "edit-ui (or Ctrl+E) opens split-pane editor workbench\n"
                     "edit-open <elf> | edit-status | edit-show-elf | edit-list-phdr | edit-list-shdr | edit-hex [offset] [length] [width]\n"
@@ -147,6 +148,22 @@ def run_textual_workspace(callbacks):
             self._apply_saved_theme()
             self._log("ELFexplorer Textual Workspace ready.")
             self._log("Type [bold]help[/bold] for command details.")
+
+        def get_system_commands(self, screen):
+            from textual.app import SystemCommand
+
+            yield from super().get_system_commands(screen)
+            yield SystemCommand(
+                "Tooling: Check External Tools",
+                "Detect host package manager and installed reverse-engineering tools",
+                self.action_tool_status,
+            )
+            for tool_key, meta in sorted(list_external_tools().items()):
+                yield SystemCommand(
+                    f"Tooling: Install {meta['label']}",
+                    f"Install {meta['label']} using the detected package manager when supported",
+                    lambda tool_key=tool_key: self.action_install_external_tool(tool_key),
+                )
 
         def action_clear_log(self):
             log = self.query_one("#log", RichLog)
@@ -196,6 +213,26 @@ def run_textual_workspace(callbacks):
 
             self.push_screen(EditorWorkbenchScreen.build(editor))
 
+        def action_tool_status(self):
+            snapshot = callbacks["tooling_snapshot"]()
+            self._log("[bold]External tool status:[/bold]")
+            for line in render_external_tool_status_lines(snapshot):
+                self._log(f"  {line}")
+
+        def action_install_external_tool(self, tool_key):
+            result = callbacks["install_external_tool"](tool_key)
+            if result.get("ok"):
+                self._log(f"[green]{result['message']}[/green]")
+            else:
+                self._log(f"[yellow]{result['message']}[/yellow]")
+            command = result.get("command")
+            if command:
+                self._log(f"  command: {' '.join(command)}")
+            output = result.get("output")
+            if output:
+                for line in output.splitlines():
+                    self._log(f"  {line}")
+
         async def on_input_submitted(self, event: Input.Submitted):
             raw = event.value.strip()
             event.input.value = ""
@@ -224,7 +261,7 @@ def run_textual_workspace(callbacks):
                     self._log("save [path] | save-collection [path]")
                     self._log("export-md <path> | export-pdf <path>")
                     self._log("export-collection-md <path> | export-collection-pdf <path>")
-                    self._log("tool-list | tool-export <format> [path]")
+                    self._log("tool-list | tool-export <format> [path] | tool-status | tool-install <tool>")
                     self._log("diff <other-file> [mode] | diff-ui <other-file> [mode]")
                     self._log("edit-open <elf> | edit-close | edit-status")
                     self._log("edit-ui (or Ctrl+E) -> open split-pane editor workbench")
@@ -378,6 +415,17 @@ def run_textual_workspace(callbacks):
                             f"  {key}: {meta.get('label', key)} "
                             f"({meta.get('extension', '')}) - {meta.get('description', '')}"
                         )
+                    return
+
+                if command == "tool-status":
+                    self.action_tool_status()
+                    return
+
+                if command == "tool-install":
+                    if not args:
+                        self._log("[red]Usage:[/red] tool-install <tool>")
+                        return
+                    self.action_install_external_tool(args[0])
                     return
 
                 if command == "tool-export":

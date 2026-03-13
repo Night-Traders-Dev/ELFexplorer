@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.9.0` (see `VERSION`).
+Current release: `0.10.0` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -119,6 +119,7 @@ Outputs are available as:
   - CI policy evaluation
   - reverse-engineering import/export interop + merge policies
   - external-tool bridge for disassemblers/memory tools
+  - host-tool detection and install orchestration
 - `src/detect/techniques/`
   - technique modules grouped by evidence type
 - `src/detect/techniques/artifact.py`
@@ -153,6 +154,7 @@ Outputs are available as:
   - JSON task-file runner for batch operations
 - `install_deps.py`
   - dependency installer with profile/group modes (`core`, `runtime`, `all`)
+  - external-tool inspection/install management (`--print-tools`, `--check-tools`, `--install-tool`)
 - `tests/`
   - corpus integration and focused heuristic unit tests
 
@@ -321,6 +323,9 @@ When called without `filepath`, `--crawl`, `--task-file`, `--load-scan`, or `--l
 - export external-tool plugin/script: `--tool-plugin-export [path-or-dir]`
 - runtime confidence calibration model input: `--calibration-model`
 - RE merge policy control: `--re-merge-policy union|prefer-import|prefer-scan`
+- print known host-managed external tools: `python3 install_deps.py --print-tools`
+- inspect host OS/package manager + tool status: `python3 install_deps.py --check-tools`
+- install external tool when supported: `python3 install_deps.py --install-tool <tool>`
 
 External-tool export notes:
 - Binary Ninja / Ghidra / IDA outputs are Python scripts that reapply inferred names and comments.
@@ -331,6 +336,8 @@ External-tool export notes:
 ### 10.5 Textual Report Palette
 
 When running report UI mode (`--ui textual` with a filepath), the Textual command palette (`Ctrl+P`) provides:
+- external tool status refresh command
+- install commands for known external tools (auto-install where supported, manual guidance otherwise)
 - Markdown export command
 - PDF export command
 - Binary Ninja export command
@@ -375,6 +382,28 @@ Behavior:
 - list installed packs: `--list-signature-packs`
 - set managed pack directory: `--signatures-dir <dir>`
 
+### 10.9 Host Tooling Management
+
+ELFexplorer now has a host-tooling layer for third-party reverse-engineering tools.
+
+Current behavior:
+- detect host OS (`Linux`, `macOS`, `Windows`)
+- detect available package managers in host-priority order
+- choose a primary package manager for install suggestions
+- check whether external tools are already installed via PATH/common install locations
+- synthesize install commands only when a verified package recipe exists
+- fall back to manual vendor/install guidance for tools that are not safely package-managed on the current host
+
+Current automatic-install coverage is conservative by design:
+- `radare2`: `brew`, `apt`, `dnf`, `pacman`
+- `ghidra`: `brew`, `pacman`
+- `binaryninja`: `brew`
+- `cutter`: `dnf`, `pacman`
+- `rizin`: `dnf`, `pacman`
+- `imhex`: `brew`, `dnf`, `yay`, `paru`
+
+Commercial/vendor-distributed tools such as `IDA Pro` are still status-checked, but installation remains manual.
+
 ## 11. Textual Workspace Command Surface
 
 Workspace commands:
@@ -389,6 +418,8 @@ Workspace commands:
 - `export-pdf <path>`
 - `export-collection-md <path>`
 - `export-collection-pdf <path>`
+- `tool-status`
+- `tool-install <tool>`
 - `tool-list`
 - `tool-export <format> [path]`
 - `diff <other-file> [mode]`
@@ -674,6 +705,15 @@ Install dependencies:
 python3 install_deps.py --profile runtime
 python3 install_deps.py --profile all --upgrade
 python3 install_deps.py --print-groups
+```
+
+Inspect/install external tools:
+
+```bash
+python3 install_deps.py --print-tools
+python3 install_deps.py --check-tools
+python3 install_deps.py --install-tool radare2 --dry-run
+python3 install_deps.py --install-tool ghidra
 ```
 
 Version check:

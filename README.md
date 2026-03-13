@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.10.0-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,26 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.10.0
+
+- Added host tooling detection and install management for external integrations:
+  - OS detection
+  - package-manager detection
+  - installed-tool status checks
+  - best-effort automatic install when a verified package recipe is available
+  - manual-install guidance for vendor-managed tools
+- Added Textual palette/system-command integration for tooling:
+  - `Tooling: Check External Tools`
+  - `Tooling: Install <tool>`
+- Added workspace commands:
+  - `tool-status`
+  - `tool-install <tool>`
+- Extended `install_deps.py` with external-tool management:
+  - `--print-tools`
+  - `--check-tools`
+  - `--install-tool <tool>`
+- Added host-tool manager module and regression tests for detection/install-command synthesis.
 
 ## What Changed in 0.9.0
 
@@ -203,6 +223,7 @@ Current false-positive guardrails include:
 - `src/detect/arch/`: architecture-shape heuristics
 - `src/advanced/`: benchmark, explainability, plugin/signature, mixed attribution, firmware fingerprinting, hardening, diff, CI, and RE interop
 - `src/advanced/toolbridge.py`: external-tool export bridge for Binary Ninja, Ghidra, IDA, radare2/Cutter, and ImHex
+- `src/advanced/tooling.py`: host OS/package-manager detection, installed-tool checks, and best-effort external-tool install orchestration
 - `src/info/elfinfo.py`: metadata printers (`general`, `important`, `detailed`)
 - `src/symbols/elfsymbols.py`: symbol-driven heuristic scoring
 - `src/uf2/`: UF2 parsing and UF2-backed firmware scanning
@@ -243,6 +264,9 @@ Or use the project installer:
 python3 install_deps.py --profile runtime
 python3 install_deps.py --profile all --upgrade
 python3 install_deps.py --print-groups
+python3 install_deps.py --print-tools
+python3 install_deps.py --check-tools
+python3 install_deps.py --install-tool radare2 --dry-run
 ```
 
 ## CLI Usage
@@ -339,6 +363,7 @@ The workspace supports:
 - save/load (`save`, `load`, `save-collection`, `load-collection`, `list-saved`)
 - export (`export-md`, `export-pdf`, `export-collection-md`, `export-collection-pdf`)
 - tool integrations (`tool-list`, `tool-export <format> [path]`)
+- host tooling checks/install (`tool-status`, `tool-install <tool>`)
 - summary display (`show`)
 - advanced ELF editing:
   - open dedicated workbench: `edit-ui` (or `Ctrl+E`)
@@ -406,6 +431,14 @@ edit-save reports/hello_c.edited.elf
 Inside the Textual report viewer (`--ui textual` with a file path), use `Ctrl+P` to open the command palette.
 
 Custom report commands include:
+- `Tooling: Check External Tools`
+- `Tooling: Install Binary Ninja`
+- `Tooling: Install Ghidra`
+- `Tooling: Install IDA Pro`
+- `Tooling: Install radare2`
+- `Tooling: Install Cutter`
+- `Tooling: Install Rizin`
+- `Tooling: Install ImHex`
 - `Report: Export Markdown`
 - `Report: Export PDF`
 - `Integrations: Export Binary Ninja Script`
@@ -510,6 +543,31 @@ Supported integrations:
 
 For multi-report runs, `--tool-plugin-export` should be omitted or pointed at a directory so ELFexplorer can emit one integration file per report.
 
+## External Tool Management
+
+Host tooling detection and install support:
+
+```bash
+python3 install_deps.py --print-tools
+python3 install_deps.py --check-tools
+python3 install_deps.py --install-tool radare2 --dry-run
+python3 install_deps.py --install-tool ghidra
+```
+
+Current behavior:
+- detects host OS and primary package manager
+- checks whether supported third-party tools are already installed
+- uses verified package-manager recipes where available
+- falls back to manual-install guidance for tools such as vendor-managed commercial distributions
+
+Current automatic-install coverage is intentionally conservative:
+- `radare2`: `brew`, `apt`, `dnf`, `pacman`
+- `ghidra`: `brew`, `pacman`
+- `binaryninja`: `brew`
+- `cutter`: `dnf`, `pacman`
+- `rizin`: `dnf`, `pacman`
+- `imhex`: `brew`, `dnf`, `yay`, `paru`
+
 ## Testing
 
 Run all tests:
@@ -567,7 +625,7 @@ See [`ELFexplored_Guide.md`](ELFexplored_Guide.md) for method-level details and 
 ## Versioning
 
 - Canonical version source: [`VERSION`](VERSION)
-- Current version: `0.9.0`
+- Current version: `0.10.0`
 - CLI check:
 
 ```bash
