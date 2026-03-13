@@ -25,7 +25,7 @@ class BackgroundTaskScreenFactory:
 
         class _BackgroundTaskScreen(ModalScreen):
             CSS = """
-            Screen {
+            ModalScreen {
                 align: center middle;
             }
             #task_modal {
@@ -40,15 +40,18 @@ class BackgroundTaskScreenFactory:
                 text-style: bold;
                 color: $accent;
                 padding-bottom: 1;
+                text-align: center;
             }
             #task_intro {
                 height: auto;
                 color: $text-muted;
                 padding-bottom: 1;
+                text-align: center;
             }
             #task_status {
                 height: auto;
                 padding: 1 0 0 0;
+                text-align: center;
             }
             #task_progress {
                 margin: 1 0;

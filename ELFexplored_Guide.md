@@ -386,6 +386,7 @@ Behavior:
 - on theme change, new value is written back to `settings.conf`
 - on Bramble executable override save, the selected path is written back to `settings.conf`
 - startup splash is shown after theme application so background checks can run without freezing the UI
+- startup splash and background task/install modal are centered on screen, with centered title/status presentation
 
 Custom ELFexplorer themes:
 - `elfexplorer-cinder`

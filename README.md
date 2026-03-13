@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.9-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.10-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,12 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.10
+
+- Centered the shared Textual startup splash and task/install modal layout by targeting the modal screen directly.
+- Center-aligned splash/task title, intro, and live status text for a cleaner startup/install presentation.
+- Added a regression test covering the centered background task screen.
 
 ## What Changed in 0.11.9
 
