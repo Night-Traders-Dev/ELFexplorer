@@ -13,7 +13,11 @@ from advanced.tooling import (
     collect_external_tool_status,
     describe_external_tool,
     download_external_tool,
+    get_external_tool_workbench_model,
     install_external_tool,
+    launch_external_tool,
+    recommend_tool_workflows,
+    run_external_tool_command,
 )
 from reporting.export import (
     export_collection_markdown,
@@ -221,6 +225,46 @@ def collect_reports_from_args(args, scan_options=None):
 
 def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
     scan_options = scan_options or {}
+
+    def tool_recommendations_for_report(report):
+        return recommend_tool_workflows(
+            report,
+            executable_overrides=load_tool_paths(),
+        )
+
+    def tool_execute_for_report(report, tool_key, action="run", preset_key=None, args=None, dry_run=False):
+        target_path = report.get("file")
+        executable_override = load_tool_path(tool_key)
+        model = get_external_tool_workbench_model(
+            tool_key,
+            target_path=target_path,
+            executable_override=executable_override,
+        )
+        resolved_args = args
+        if resolved_args in (None, "") and preset_key:
+            for preset in model.get("presets", []):
+                if preset.get("key") == preset_key:
+                    resolved_args = preset.get("args", [])
+                    break
+        if resolved_args in (None, "") and action == "launch":
+            resolved_args = model.get("launch_args", [])
+
+        if action == "launch":
+            return launch_external_tool(
+                tool_key,
+                target_path=target_path,
+                args=resolved_args,
+                dry_run=dry_run,
+                executable_override=executable_override,
+            )
+        return run_external_tool_command(
+            tool_key,
+            args=resolved_args,
+            target_path=target_path,
+            dry_run=dry_run,
+            executable_override=executable_override,
+        )
+
     return {
         "scan": lambda path, mode="general": build_scan_report(path, mode=mode, options=scan_options),
         "crawl": lambda path, mode="general", recursive=True, max_files=None: crawl_directory(
@@ -251,6 +295,8 @@ def workspace_callbacks(ui_mode, explicit_ui, store_dir, scan_options=None):
             tool_key,
             executable_override=load_tool_path(tool_key),
         ),
+        "tool_recommendations": tool_recommendations_for_report,
+        "tool_execute": tool_execute_for_report,
         "download_external_tool": download_external_tool,
         "install_external_tool": install_external_tool,
         "show_report": lambda report: display_report(report, ui_mode=ui_mode, explicit_ui=explicit_ui),

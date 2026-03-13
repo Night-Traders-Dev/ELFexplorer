@@ -97,6 +97,8 @@ class DashboardRuntime:
             "tool_plugins": bool(self._callback("list_tool_plugins"))
             and bool(self._callback("export_tool_plugin")),
             "tooling": bool(self._callback("tooling_snapshot")),
+            "tool_runner": bool(self._callback("tool_recommendations"))
+            and bool(self._callback("tool_execute")),
             "diff": bool(self._callback("scan")),
         }
 
@@ -236,6 +238,31 @@ class DashboardRuntime:
         if not callback:
             raise RuntimeError("Tooling detail is unavailable in this dashboard context.")
         return callback(tool_key)
+
+    def tool_recommendations(self, index):
+        callback = self._callback("tool_recommendations")
+        if not callback:
+            raise RuntimeError("Tool recommendations are unavailable in this dashboard context.")
+        report = self.get_report(index)
+        return callback(report)
+
+    def tool_execute(self, index, tool_key, action="run", preset_key=None, args=None, dry_run=False):
+        callback = self._callback("tool_execute")
+        if not callback:
+            raise RuntimeError("Tool execution is unavailable in this dashboard context.")
+        report = self.get_report(index)
+        result = callback(
+            report,
+            tool_key,
+            action=action,
+            preset_key=preset_key,
+            args=args,
+            dry_run=dry_run,
+        )
+        message = result.get("message")
+        if message:
+            self.message = message
+        return result
 
     def compare_with(self, index, other_path, mode="general"):
         report = self.get_report(index)
@@ -458,8 +485,46 @@ def build_dashboard_html(initial_state):
     .toolbar-row {{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }}
     .sticky-top {{ position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--panel) 94%, #000 4%); }}
     .hidden {{ display: none !important; }}
+    .runner-grid {{ display: grid; gap: 14px; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }}
+    .runner-list {{ display: grid; gap: 10px; max-height: 780px; overflow: auto; overscroll-behavior: contain; }}
+    .tool-card {{
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 90%, #fff 2%);
+      cursor: pointer;
+    }}
+    .tool-card.selected {{
+      border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
+    }}
+    .tool-card.recommended {{
+      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 8%, var(--surface)), color-mix(in srgb, var(--surface) 90%, #fff 2%));
+    }}
+    .tool-card .title-row {{ display: flex; justify-content: space-between; gap: 10px; align-items: center; }}
+    .runner-status {{
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      white-space: nowrap;
+    }}
+    .runner-status.good {{
+      color: var(--success);
+      border-color: color-mix(in srgb, var(--success) 36%, var(--border));
+    }}
+    .runner-status.bad {{
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 36%, var(--border));
+    }}
+    .tool-card .reason {{ margin-top: 10px; color: var(--muted); line-height: 1.5; }}
+    .tool-card .meta {{ margin-top: 10px; font-size: 0.82rem; color: var(--muted); }}
+    .action-grid {{ display: grid; gap: 12px; }}
+    .output-log {{ min-height: 220px; max-height: 420px; overflow: auto; overscroll-behavior: contain; }}
     @media (max-width: 1180px) {{
       .shell {{ grid-template-columns: 1fr; }}
+      .runner-grid {{ grid-template-columns: 1fr; }}
       .pill-grid, .details-grid, .split-grid, .inline-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -574,6 +639,7 @@ def build_dashboard_html(initial_state):
           <button class="tab" data-tab="firmware">Firmware</button>
           <button class="tab" data-tab="plugins">Plugins</button>
           <button class="tab" data-tab="diff">Diff</button>
+          <button class="tab" data-tab="tool-runner">Tool Runner</button>
           <button class="tab" data-tab="integrations">Integrations</button>
           <button class="tab" data-tab="metadata">Metadata</button>
           <button class="tab" data-tab="json">JSON</button>
@@ -586,6 +652,7 @@ def build_dashboard_html(initial_state):
         <div id="panel-firmware" class="panel"></div>
         <div id="panel-plugins" class="panel"></div>
         <div id="panel-diff" class="panel"></div>
+        <div id="panel-tool-runner" class="panel"></div>
         <div id="panel-integrations" class="panel"></div>
         <div id="panel-metadata" class="panel"></div>
         <div id="panel-json" class="panel"></div>
@@ -601,6 +668,12 @@ def build_dashboard_html(initial_state):
     let activeTab = 'overview';
     let toolingSnapshot = null;
     let activeToolKey = null;
+    let toolRecommendations = null;
+    let activeRunnerToolKey = null;
+    let toolRunnerAction = 'run';
+    let toolRunnerPresetKey = '';
+    let toolRunnerArgsText = '';
+    let toolRunnerResult = null;
     let renderFrame = null;
     const themeSelect = document.getElementById('theme-select');
     const themeKey = 'elfexplorer.web.theme';
@@ -623,6 +696,58 @@ def build_dashboard_html(initial_state):
     function activeReport() {{
       if (selectedIndex === null || selectedIndex === undefined) return null;
       return appState.reports?.[selectedIndex] ?? null;
+    }}
+
+    function resetToolRunnerState() {{
+      toolRecommendations = null;
+      activeRunnerToolKey = null;
+      toolRunnerAction = 'run';
+      toolRunnerPresetKey = '';
+      toolRunnerArgsText = '';
+      toolRunnerResult = null;
+    }}
+
+    function shellQuote(value) {{
+      const text = String(value ?? '');
+      if (!text.length) return "''";
+      if (/^[A-Za-z0-9_./:=+%-]+$/.test(text)) return text;
+      return JSON.stringify(text);
+    }}
+
+    function formatArgs(args) {{
+      return (args || []).map((item) => shellQuote(item)).join(' ');
+    }}
+
+    function currentToolRecommendation() {{
+      return (toolRecommendations?.tools || []).find((item) => item.tool_key === activeRunnerToolKey) || null;
+    }}
+
+    function applyToolRunnerDefaults(tool) {{
+      if (!tool) return;
+      activeRunnerToolKey = tool.tool_key;
+      toolRunnerAction = tool.default_action || (tool.cli_friendly ? 'run' : 'launch');
+      toolRunnerPresetKey = tool.default_preset_key || '';
+      toolRunnerArgsText = formatArgs(tool.default_args || []);
+      toolRunnerResult = null;
+    }}
+
+    function syncToolRunnerSelection() {{
+      const tools = toolRecommendations?.tools || [];
+      if (!tools.length) {{
+        activeRunnerToolKey = null;
+        return;
+      }}
+      const current = currentToolRecommendation();
+      applyToolRunnerDefaults(current || tools[0]);
+    }}
+
+    function resolveRunnerPreview(tool) {{
+      if (!tool) return '';
+      const file = tool.target_path || activeReport()?.file || '';
+      const executable = tool.status?.path || tool.executable_override || tool.tool_key;
+      const argText = (toolRunnerArgsText || '').trim() || formatArgs(tool.default_args || []);
+      const resolved = argText.replaceAll('{{file}}', file);
+      return `${{executable}}${{resolved ? ` ${{resolved}}` : ''}}`;
     }}
 
     function metric(label, value) {{
@@ -954,6 +1079,107 @@ def build_dashboard_html(initial_state):
       `;
     }}
 
+    function renderToolRunner() {{
+      const report = activeReport();
+      const caps = appState.capabilities || {{}};
+      if (!report) {{
+        return '<div class="empty">Select or scan a binary to build recommended third-party tool actions.</div>';
+      }}
+      if (!caps.tool_runner) {{
+        return '<div class="empty">Tool execution callbacks are unavailable in this dashboard context.</div>';
+      }}
+      if (!toolRecommendations) {{
+        return '<div class="empty">Loading tool recommendations for the active binary…</div>';
+      }}
+      const tools = toolRecommendations.tools || [];
+      if (!tools.length) {{
+        return '<div class="empty">No tool workflows are available for this report.</div>';
+      }}
+      const current = currentToolRecommendation() || tools[0];
+      const presets = current.presets || [];
+      const supportsRun = Boolean(current.cli_friendly || presets.length);
+      const actionOptions = [
+        supportsRun ? `<option value="run"${{toolRunnerAction === 'run' ? ' selected' : ''}}>Run and capture output</option>` : '',
+        `<option value="launch"${{toolRunnerAction === 'launch' ? ' selected' : ''}}>Launch external tool</option>`,
+      ].filter(Boolean).join('');
+      const presetOptions = [`<option value="">Manual / default</option>`]
+        .concat(
+          presets.map((preset) => `<option value="${{preset.key}}"${{toolRunnerPresetKey === preset.key ? ' selected' : ''}}>${{escapeHtml(preset.label)}}</option>`)
+        )
+        .join('');
+      const resultBlock = toolRunnerResult
+        ? codeBlock(
+            [
+              toolRunnerResult.message || '',
+              toolRunnerResult.command ? `command: ${{toolRunnerResult.command.join(' ')}}` : '',
+              toolRunnerResult.pid ? `pid: ${{toolRunnerResult.pid}}` : '',
+              toolRunnerResult.returncode !== undefined ? `returncode: ${{toolRunnerResult.returncode}}` : '',
+              toolRunnerResult.output || '',
+            ].filter(Boolean).join('\\n')
+          )
+        : '<div class="muted">Preview, run, or launch a tool to see the resolved command and execution result here.</div>';
+
+      return `
+        <div class="runner-grid">
+          <div class="runner-list">
+            ${{
+              tools.map((tool) => `
+                <div class="tool-card ${{tool.tool_key === current.tool_key ? 'selected' : ''}} ${{tool.recommended ? 'recommended' : ''}}" data-tool-runner-select="${{tool.tool_key}}">
+                  <div class="title-row">
+                    <strong>${{escapeHtml(tool.status?.label || tool.tool_key)}}</strong>
+                    <span class="runner-status ${{tool.status?.installed ? 'good' : 'bad'}}">${{tool.status?.installed ? 'Installed' : 'Missing'}}</span>
+                  </div>
+                  <div class="meta">priority=${{tool.priority || 0}} • action=${{tool.default_action || 'launch'}} • container=${{escapeHtml(toolRecommendations.container_kind || 'unknown')}}</div>
+                  <div class="reason">${{escapeHtml(tool.reason || 'Available for this report.')}}</div>
+                </div>
+              `).join('')
+            }}
+          </div>
+          <div class="action-grid">
+            <div class="details-grid">
+              <div class="detail-card"><strong class="muted">Selected Tool</strong><div>${{escapeHtml(current.status?.label || current.tool_key)}}</div></div>
+              <div class="detail-card"><strong class="muted">Binary Type</strong><div>${{escapeHtml(toolRecommendations.artifact_type || toolRecommendations.container_kind || 'Unknown')}}</div></div>
+              <div class="detail-card"><strong class="muted">Resolved Binary</strong><div>${{escapeHtml(current.target_path || report.file || 'Unknown')}}</div></div>
+              <div class="detail-card"><strong class="muted">Executable</strong><div>${{escapeHtml(current.status?.path || current.executable_override || 'Not detected')}}</div></div>
+            </div>
+            <div class="detail-card">
+              <strong class="muted">Recommendation</strong>
+              <div style="margin-top:8px;">${{escapeHtml(current.reason || 'Available for manual use.')}}</div>
+              <div class="form-grid" style="margin-top:14px;">
+                <div class="inline-grid">
+                  <label>
+                    <div class="muted" style="margin-bottom:6px;">Action</div>
+                    <select id="tool-runner-action">${{actionOptions}}</select>
+                  </label>
+                  <label>
+                    <div class="muted" style="margin-bottom:6px;">Preset</div>
+                    <select id="tool-runner-preset">${{presetOptions}}</select>
+                  </label>
+                </div>
+                <label>
+                  <div class="muted" style="margin-bottom:6px;">Arguments</div>
+                  <textarea id="tool-runner-args" placeholder="Enter CLI arguments or keep the recommended preset args">${{escapeHtml(toolRunnerArgsText || '')}}</textarea>
+                </label>
+                <div class="toolbar-row">
+                  <button type="button" id="tool-runner-refresh">Refresh Recommendations</button>
+                  <button type="button" id="tool-runner-preview">Preview Command</button>
+                  <button type="button" id="tool-runner-execute" class="primary">${{toolRunnerAction === 'launch' ? 'Launch Tool' : 'Run Tool'}}</button>
+                </div>
+              </div>
+            </div>
+            <div class="detail-card">
+              <strong class="muted">Command Preview</strong>
+              <div style="margin-top:10px;">${{escapeHtml(resolveRunnerPreview(current) || 'Unavailable')}}</div>
+            </div>
+            <div class="detail-card">
+              <strong class="muted">Execution Result</strong>
+              <div class="output-log" style="margin-top:12px;">${{resultBlock}}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }}
+
     function renderIntegrations() {{
       const caps = appState.capabilities || {{}};
       if (!caps.tooling) {{
@@ -1019,6 +1245,7 @@ def build_dashboard_html(initial_state):
         firmware: renderFirmware,
         plugins: renderPlugins,
         diff: renderDiff,
+        'tool-runner': renderToolRunner,
         integrations: renderIntegrations,
         metadata: renderMetadata,
         json: renderJson,
@@ -1058,6 +1285,7 @@ def build_dashboard_html(initial_state):
       appState = await apiPost('/api/scan', {{ path, mode }});
       selectedIndex = appState.selected_index;
       activeToolKey = null;
+      resetToolRunnerState();
       scheduleRender();
     }}
 
@@ -1065,6 +1293,7 @@ def build_dashboard_html(initial_state):
       appState = await apiPost('/api/crawl', {{ path, mode, recursive, max_files: maxFiles }});
       selectedIndex = appState.selected_index;
       activeToolKey = null;
+      resetToolRunnerState();
       scheduleRender();
     }}
 
@@ -1072,6 +1301,7 @@ def build_dashboard_html(initial_state):
       appState = await apiPost('/api/load-scan', {{ path }});
       selectedIndex = appState.selected_index;
       activeToolKey = null;
+      resetToolRunnerState();
       scheduleRender();
     }}
 
@@ -1079,6 +1309,7 @@ def build_dashboard_html(initial_state):
       appState = await apiPost('/api/load-collection', {{ path }});
       selectedIndex = appState.selected_index;
       activeToolKey = null;
+      resetToolRunnerState();
       scheduleRender();
     }}
 
@@ -1125,12 +1356,39 @@ def build_dashboard_html(initial_state):
       }};
     }}
 
+    async function ensureToolRecommendations(force = false) {{
+      const report = activeReport();
+      if (!report) {{
+        resetToolRunnerState();
+        return;
+      }}
+      if (!force && toolRecommendations && toolRecommendations.target_path === String(report.file || '')) return;
+      toolRecommendations = await apiPost('/api/tooling/recommendations', {{ index: selectedIndex }});
+      syncToolRunnerSelection();
+    }}
+
     async function showToolDetail(toolKey) {{
       await ensureToolingSnapshot();
       if (!toolingSnapshot.details[toolKey]) {{
         toolingSnapshot.details[toolKey] = await apiGet(`/api/tooling/${{toolKey}}/detail`);
       }}
       activeToolKey = toolKey;
+      scheduleRender();
+    }}
+
+    async function runToolExecute(dryRun = false) {{
+      const tool = currentToolRecommendation();
+      if (!tool) return;
+      const payload = await apiPost('/api/tooling/execute', {{
+        index: selectedIndex,
+        tool_key: tool.tool_key,
+        action: toolRunnerAction,
+        preset_key: toolRunnerPresetKey || null,
+        args: toolRunnerArgsText.trim(),
+        dry_run: dryRun,
+      }});
+      toolRunnerResult = payload;
+      setStatus(payload.message || (dryRun ? 'Generated tool command preview.' : 'Executed tool action.'));
       scheduleRender();
     }}
 
@@ -1153,6 +1411,9 @@ def build_dashboard_html(initial_state):
     function activateTab(tab) {{
       activeTab = tab;
       document.querySelectorAll('.tab').forEach((item) => item.classList.toggle('active', item.dataset.tab === tab));
+      if (tab === 'tool-runner') {{
+        ensureToolRecommendations().then(() => scheduleRender()).catch((error) => setStatus(error.message));
+      }}
       if (tab === 'integrations') {{
         ensureToolingSnapshot().then(() => scheduleRender()).catch((error) => setStatus(error.message));
       }}
@@ -1255,6 +1516,11 @@ def build_dashboard_html(initial_state):
       const item = event.target.closest('.report-item');
       if (!item) return;
       selectedIndex = Number(item.dataset.index);
+      resetToolRunnerState();
+      if (activeTab === 'tool-runner') {{
+        ensureToolRecommendations().then(() => scheduleRender()).catch((error) => setStatus(error.message));
+        return;
+      }}
       scheduleRender();
     }});
 
@@ -1290,6 +1556,76 @@ def build_dashboard_html(initial_state):
         scheduleRender();
       }} catch (error) {{
         setStatus(error.message);
+      }}
+    }});
+
+    document.addEventListener('click', async (event) => {{
+      const item = event.target.closest('[data-tool-runner-select]');
+      if (!item) return;
+      const tool = (toolRecommendations?.tools || []).find((entry) => entry.tool_key === item.dataset.toolRunnerSelect);
+      if (!tool) return;
+      applyToolRunnerDefaults(tool);
+      scheduleRender();
+    }});
+
+    document.addEventListener('change', (event) => {{
+      if (event.target.id === 'tool-runner-action') {{
+        toolRunnerAction = event.target.value;
+        const tool = currentToolRecommendation();
+        if (tool && !toolRunnerPresetKey) {{
+          toolRunnerArgsText = formatArgs(
+            toolRunnerAction === 'launch' ? (tool.launch_args || []) : (tool.default_args || [])
+          );
+        }}
+        toolRunnerResult = null;
+        scheduleRender();
+        return;
+      }}
+      if (event.target.id === 'tool-runner-preset') {{
+        toolRunnerPresetKey = event.target.value;
+        const tool = currentToolRecommendation();
+        const preset = (tool?.presets || []).find((entry) => entry.key === toolRunnerPresetKey);
+        if (preset) {{
+          toolRunnerArgsText = formatArgs(preset.args || []);
+        }} else if (tool) {{
+          toolRunnerArgsText = formatArgs(
+            toolRunnerAction === 'launch' ? (tool.launch_args || []) : (tool.default_args || [])
+          );
+        }}
+        toolRunnerResult = null;
+        scheduleRender();
+      }}
+    }});
+
+    document.addEventListener('input', (event) => {{
+      if (event.target.id !== 'tool-runner-args') return;
+      toolRunnerArgsText = event.target.value;
+    }});
+
+    document.addEventListener('click', async (event) => {{
+      if (event.target.id === 'tool-runner-refresh') {{
+        try {{
+          await ensureToolRecommendations(true);
+          scheduleRender();
+        }} catch (error) {{
+          setStatus(error.message);
+        }}
+        return;
+      }}
+      if (event.target.id === 'tool-runner-preview') {{
+        try {{
+          await runToolExecute(true);
+        }} catch (error) {{
+          setStatus(error.message);
+        }}
+        return;
+      }}
+      if (event.target.id === 'tool-runner-execute') {{
+        try {{
+          await runToolExecute(false);
+        }} catch (error) {{
+          setStatus(error.message);
+        }}
       }}
     }});
 
@@ -1444,6 +1780,20 @@ def create_dashboard_server(
                         payload.get("index"),
                         payload.get("format"),
                         path=payload.get("path"),
+                    )
+                    _send_json(self, 200, result)
+                    return
+                if path == "/api/tooling/recommendations":
+                    _send_json(self, 200, runtime.tool_recommendations(payload.get("index")))
+                    return
+                if path == "/api/tooling/execute":
+                    result = runtime.tool_execute(
+                        payload.get("index"),
+                        payload.get("tool_key"),
+                        action=payload.get("action", "run"),
+                        preset_key=payload.get("preset_key"),
+                        args=payload.get("args"),
+                        dry_run=bool(payload.get("dry_run", False)),
                     )
                     _send_json(self, 200, result)
                     return

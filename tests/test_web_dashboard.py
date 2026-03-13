@@ -77,6 +77,7 @@ class WebDashboardTests(unittest.TestCase):
         self.assertIn("Crawl Directory", html)
         self.assertIn("Load Saved JSON", html)
         self.assertIn("Compare / Diff", html)
+        self.assertIn("Tool Runner", html)
         self.assertIn("Integrations", html)
         self.assertIn("Save Report JSON", html)
 
@@ -110,6 +111,44 @@ class WebDashboardTests(unittest.TestCase):
                 "tools": [{"key": "radare2", "label": "radare2", "installed": True, "path": "/usr/bin/radare2"}],
             },
             "tooling_detail": lambda tool_key: {"key": tool_key, "installed": True, "path": "/usr/bin/radare2"},
+            "tool_recommendations": lambda report: {
+                "target_path": report["file"],
+                "container_kind": "elf",
+                "artifact_type": "Linux User-space Executable",
+                "tools": [
+                    {
+                        "tool_key": "radare2",
+                        "target_path": report["file"],
+                        "status": {
+                            "label": "radare2",
+                            "installed": True,
+                            "path": "/usr/bin/radare2",
+                        },
+                        "recommended": True,
+                        "priority": 95,
+                        "reason": "Best quick CLI fit.",
+                        "default_action": "run",
+                        "default_preset_key": "functions",
+                        "default_args": ["-A", "-q", "-c", "afl", "{file}"],
+                        "cli_friendly": True,
+                        "launch_args": ["{file}"],
+                        "presets": [
+                            {
+                                "key": "functions",
+                                "label": "Functions",
+                                "args": ["-A", "-q", "-c", "afl", "{file}"],
+                            }
+                        ],
+                    }
+                ],
+            },
+            "tool_execute": lambda report, tool_key, action="run", preset_key=None, args=None, dry_run=False: {
+                "ok": True,
+                "message": f"{tool_key}:{action}:{'dry' if dry_run else 'live'}",
+                "command": ["/usr/bin/radare2", "-A", report["file"]],
+                "output": "afl output",
+                "returncode": 0,
+            },
             "list_saved": lambda: [],
         }
         server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[], port=0)
@@ -171,6 +210,34 @@ class WebDashboardTests(unittest.TestCase):
 
             tooling_detail = json.load(urllib.request.urlopen(f"{url}/api/tooling/radare2/detail"))
             self.assertEqual(tooling_detail["key"], "radare2")
+
+            recommendation_request = urllib.request.Request(
+                f"{url}/api/tooling/recommendations",
+                data=json.dumps({"index": 0}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            recommendation_response = json.load(urllib.request.urlopen(recommendation_request))
+            self.assertEqual(recommendation_response["tools"][0]["tool_key"], "radare2")
+
+            execute_request = urllib.request.Request(
+                f"{url}/api/tooling/execute",
+                data=json.dumps(
+                    {
+                        "index": 0,
+                        "tool_key": "radare2",
+                        "action": "run",
+                        "preset_key": "functions",
+                        "args": "-A -q -c afl {file}",
+                        "dry_run": True,
+                    }
+                ).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            execute_response = json.load(urllib.request.urlopen(execute_request))
+            self.assertTrue(execute_response["ok"])
+            self.assertEqual(execute_response["message"], "radare2:run:dry")
         finally:
             server.shutdown()
             server.server_close()

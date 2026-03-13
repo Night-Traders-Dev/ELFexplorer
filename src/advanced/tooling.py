@@ -89,7 +89,7 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.12.2 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.12.3 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
     "bramble": {
@@ -1465,6 +1465,215 @@ def get_external_tool_workbench_model(tool_key, target_path=None, environment=No
         "cli_friendly": bool(profile.get("cli_friendly")),
         "launch_args": list(profile.get("launch_args", [])),
         "presets": list_external_tool_presets(tool_key),
+    }
+
+
+def _report_container_kind(report):
+    file_path = str(report.get("file", ""))
+    suffix = Path(file_path).suffix.lower()
+    metadata_text = str(report.get("metadata_text", ""))
+    artifact = report.get("scan_result", {}).get("artifact_profile", {})
+    artifact_type = str(artifact.get("artifact_type", "Unknown"))
+
+    if suffix == ".uf2" or "File Type: UF2" in metadata_text:
+        return "uf2"
+    if suffix in {".hex", ".ihex", ".ihx"} or "File Type: Intel HEX" in metadata_text:
+        return "intel-hex"
+    if suffix in {".srec", ".s19", ".s28", ".s37", ".mot"} or "File Type: Motorola S-record" in metadata_text:
+        return "srec"
+    if suffix in {".bin", ".fw", ".rom", ".img", ".raw", ".blob"} or metadata_text.startswith(
+        "----- General Raw Binary Information -----"
+    ):
+        return "raw-firmware"
+    if "----- General ELF Information -----" in metadata_text or artifact_type in {
+        "Linux User-space Executable",
+        "Static User-space Executable",
+        "Linux Shared Library",
+        "Linux Kernel Module",
+        "Relocatable Object",
+    }:
+        return "elf"
+    return "unknown"
+
+
+def _find_preset_args(model, preset_key):
+    for preset in model.get("presets", []):
+        if preset.get("key") == preset_key:
+            return list(preset.get("args", []))
+    return []
+
+
+def recommend_tool_workflows(report, environment=None, executable_overrides=None):
+    environment = environment or detect_host_environment()
+    executable_overrides = executable_overrides or {}
+    file_path = str(report.get("file", ""))
+    scan = report.get("scan_result", {})
+    artifact = scan.get("artifact_profile", {})
+    container_kind = _report_container_kind(report)
+    artifact_type = str(artifact.get("artifact_type", "Unknown"))
+    target_hint = str(artifact.get("target", ""))
+    family_hint = str(artifact.get("family", ""))
+    source_language = str(scan.get("source_language", "Unknown"))
+    symbol_count = len((scan.get("binary_map") or {}).get("symbols") or [])
+    is_firmware = artifact_type == "Bare-metal Firmware" or container_kind in {
+        "uf2",
+        "intel-hex",
+        "srec",
+        "raw-firmware",
+    }
+    is_elf = container_kind == "elf"
+    is_rp_family = any(token in f"{target_hint} {family_hint}" for token in ("RP2040", "RP2350"))
+
+    recommendations = {}
+
+    def recommend(tool_key, *, priority, reason, action, preset_key=None):
+        current = recommendations.get(tool_key)
+        if current and current["priority"] >= priority:
+            return
+        recommendations[tool_key] = {
+            "priority": int(priority),
+            "reason": str(reason),
+            "default_action": str(action),
+            "default_preset_key": preset_key or "",
+        }
+
+    cli_preset = "functions" if symbol_count and is_elf else ("sections" if is_firmware else "file-info")
+
+    if is_elf:
+        recommend(
+            "radare2",
+            priority=92,
+            reason="Fast scripted CLI inspection for ELF binaries.",
+            action="run",
+            preset_key=cli_preset,
+        )
+        recommend(
+            "rizin",
+            priority=90,
+            reason="Alternative CLI reversing workflow for ELF binaries.",
+            action="run",
+            preset_key=cli_preset,
+        )
+        recommend(
+            "cutter",
+            priority=84,
+            reason="GUI reversing workflow suited to ELF binaries.",
+            action="launch",
+        )
+        recommend(
+            "binaryninja",
+            priority=82,
+            reason="Native GUI analysis for ELF targets.",
+            action="launch",
+        )
+        recommend(
+            "ghidra",
+            priority=80,
+            reason="Full reverse-engineering workspace for ELF targets.",
+            action="launch",
+        )
+        recommend(
+            "ida",
+            priority=78,
+            reason="Vendor GUI workflow for ELF targets.",
+            action="launch",
+        )
+
+    if is_firmware:
+        recommend(
+            "imhex",
+            priority=96,
+            reason="Best fit for firmware, raw images, and byte-accurate memory inspection.",
+            action="launch",
+        )
+        if is_elf:
+            recommend(
+                "radare2",
+                priority=94,
+                reason="Useful for quick section and symbol inspection of firmware ELF images.",
+                action="run",
+                preset_key="sections",
+            )
+            recommend(
+                "rizin",
+                priority=92,
+                reason="Useful for quick section and symbol inspection of firmware ELF images.",
+                action="run",
+                preset_key="sections",
+            )
+        if is_rp_family and container_kind in {"uf2", "elf"}:
+            recommend(
+                "bramble",
+                priority=100,
+                reason="RP2040/RP2350 firmware can be launched directly in Bramble.",
+                action="launch",
+                preset_key="run-firmware",
+            )
+
+    if source_language in {"C", "C++", "Rust", "Go"} and is_elf:
+        recommend(
+            "radare2",
+            priority=95,
+            reason="Function-oriented analysis is a strong first pass for compiled ELF binaries.",
+            action="run",
+            preset_key="functions",
+        )
+        recommend(
+            "rizin",
+            priority=93,
+            reason="Function-oriented analysis is a strong first pass for compiled ELF binaries.",
+            action="run",
+            preset_key="functions",
+        )
+
+    tools = []
+    for tool_key in THIRD_PARTY_TOOLS:
+        model = get_external_tool_workbench_model(
+            tool_key,
+            target_path=file_path,
+            environment=environment,
+            executable_override=executable_overrides.get(tool_key),
+        )
+        recommendation = recommendations.get(
+            tool_key,
+            {
+                "priority": 0,
+                "reason": "Available, but not a primary recommendation for the current binary.",
+                "default_action": "run" if model.get("cli_friendly") and model.get("presets") else "launch",
+                "default_preset_key": (
+                    model.get("presets", [{}])[0].get("key", "") if model.get("presets") else ""
+                ),
+            },
+        )
+        default_args = (
+            _find_preset_args(model, recommendation["default_preset_key"])
+            if recommendation["default_preset_key"]
+            else list(model.get("launch_args", []))
+        )
+        tools.append(
+            {
+                **model,
+                "recommended": recommendation["priority"] > 0,
+                "priority": recommendation["priority"],
+                "reason": recommendation["reason"],
+                "default_action": recommendation["default_action"],
+                "default_preset_key": recommendation["default_preset_key"],
+                "default_args": default_args,
+            }
+        )
+
+    tools.sort(
+        key=lambda item: (
+            -int(item.get("priority", 0)),
+            not item.get("status", {}).get("installed", False),
+            item.get("status", {}).get("label", item.get("tool_key", "")),
+        )
+    )
+    return {
+        "target_path": file_path,
+        "container_kind": container_kind,
+        "artifact_type": artifact_type,
+        "tools": tools,
     }
 
 

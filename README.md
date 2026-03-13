@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.12.2-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.12.3-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,22 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.12.3
+
+- Added a browser-native `Tool Runner` tab to the web dashboard.
+- Added intelligent per-report tool recommendations so the dashboard now selects sensible defaults based on the active binary:
+  - ELF executables favor `radare2`/`rizin` function or section presets
+  - RP2040/RP2350 firmware favors `bramble`
+  - firmware/raw images favor `imhex`
+- Added web API routes for:
+  - tool recommendations for the active report
+  - tool execution with either dry-run preview or live execution
+- Added web-side command preview, preset selection, argument editing, captured CLI output, and GUI-tool launch actions.
+- Added regression tests covering:
+  - recommendation ranking logic
+  - web recommendation and execution routes
+  - generated dashboard JavaScript syntax after the new Tool Runner UI additions
 
 ## What Changed in 0.12.2
 
@@ -484,6 +500,10 @@ Current dashboard workflows:
 - load a saved scan JSON
 - load a saved collection JSON
 - browse multiple reports and switch active report instantly
+- intelligent tool recommendations for the active binary
+- command preview for recommended third-party tools
+- run CLI-friendly tools and capture their output directly in the browser
+- launch GUI-centric tools with binary-aware default parameters
 - export the active report to Markdown or PDF
 - download the active report as JSON
 

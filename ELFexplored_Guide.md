@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.12.2` (see `VERSION`).
+Current release: `0.12.3` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -610,11 +610,16 @@ Current dashboard capabilities:
 - collection Markdown/PDF export
 - diff against another binary from the browser
 - external-tool plugin export and host-tool status/detail inspection
+- recommendation-driven third-party tool runner for the active report
+- binary-aware default tool/action selection (for example ELF -> radare2/rizin, RP2040 UF2 -> Bramble, raw firmware -> ImHex)
+- preset-aware command preview with editable arguments
+- capturable CLI execution results rendered directly in the browser
+- GUI-tool launch actions using the resolved active binary path
 - direct JSON download for the active report
 
 Validation and regression coverage now include:
 - generated dashboard JavaScript syntax validation via `node --check`
-- local HTTP server tests for web `scan`, `save`, `plugin export`, `tooling`, and `diff` routes
+- local HTTP server tests for web `scan`, `save`, `plugin export`, `tooling`, `tool execute`, and `diff` routes
 - direct verification that the web action buttons map onto working API endpoints
 
 The web dashboard is intentionally dependency-light:
