@@ -323,6 +323,71 @@ class ToolingTests(unittest.TestCase):
         self.assertTrue(model["presets"])
         self.assertEqual(model["target_path"], "/tmp/sample.elf")
 
+    def test_bramble_workbench_model_exposes_firmware_presets(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+
+        def fake_which(name):
+            if name in {"git", "cmake", "make"}:
+                return f"/usr/bin/{name}"
+            return None
+
+        with mock.patch("advanced.tooling.shutil.which", side_effect=fake_which):
+            model = tooling.get_external_tool_workbench_model(
+                "bramble",
+                target_path="/tmp/fw.uf2",
+                environment=environment,
+            )
+
+        self.assertEqual(model["tool_key"], "bramble")
+        self.assertTrue(model["cli_friendly"])
+        self.assertTrue(model["status"]["portable_install_supported"])
+        self.assertEqual(model["launch_args"], ["{file}"])
+        preset_keys = {item["key"] for item in model["presets"]}
+        self.assertIn("run-firmware", preset_keys)
+        self.assertIn("gdb-server", preset_keys)
+
+    def test_install_external_tool_uses_source_build_for_bramble(self):
+        environment = {
+            "os": "linux",
+            "os_label": "Linux",
+            "arch": "x86_64",
+            "package_managers": [],
+            "primary_package_manager": None,
+            "primary_package_manager_label": "None detected",
+        }
+        source_result = {
+            "ok": True,
+            "changed": False,
+            "message": "Dry run source build",
+            "status": {"label": "Bramble"},
+            "portable": True,
+        }
+
+        def fake_which(name):
+            if name in {"git", "cmake", "make"}:
+                return f"/usr/bin/{name}"
+            return None
+
+        with mock.patch("advanced.tooling.shutil.which", side_effect=fake_which), mock.patch(
+            "advanced.tooling._find_tool_path",
+            return_value=None,
+        ), mock.patch(
+            "advanced.tooling._install_bramble_from_source",
+            return_value=source_result,
+        ) as source_install:
+            result = tooling.install_external_tool("bramble", dry_run=True, environment=environment)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["portable"])
+        source_install.assert_called_once()
+
     def test_run_external_tool_command_dry_run_substitutes_target_path(self):
         environment = {
             "os": "linux",

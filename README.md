@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.11.5-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.11.6-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,12 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.11.6
+
+- Added Bramble (`Night-Traders-Dev/Bramble`) as a supported third-party integration.
+- Added Bramble Tool Workbench presets for firmware run, debug, status, GDB server, and ASM trace flows.
+- Added one-click ELFexplorer-managed Bramble source builds on supported hosts using `git` + `cmake`.
 
 ## What Changed in 0.11.5
 
@@ -468,6 +474,7 @@ The Tool Workbench provides an in-app control surface for third-party integratio
 - export button for matching integration scripts when a scan report is active
 
 Current built-in command presets focus on tools that have stable CLI output:
+- `bramble`: run firmware, debug core 0, status stream, GDB server, ASM trace
 - `radare2`: file info, sections, symbols, functions, strings
 - `rizin`: file info, sections, symbols, functions, strings
 - `cutter`: version
@@ -629,6 +636,7 @@ python3 src/elfscan.py --crawl test-bin --tool-plugin-format imhex --tool-plugin
 ```
 
 Supported integrations:
+- Bramble
 - Binary Ninja
 - Ghidra
 - IDA Pro
@@ -683,6 +691,7 @@ Current automatic-install coverage is intentionally conservative:
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
 
 Current one-click local-install coverage on Linux:
+- `bramble`: source clone + recursive submodules + CMake build under `~/.elfexplorer/tools/bramble/...`
 - `ghidra`: official release ZIP -> extracted under `~/.elfexplorer/tools/ghidra/...`
 - `binaryninja`: Binary Ninja Free Linux ZIP -> extracted under `~/.elfexplorer/tools/binaryninja/...`
 - `cutter`: upstream AppImage -> installed under `~/.elfexplorer/tools/cutter/...`
@@ -693,6 +702,7 @@ Launch wrappers for local installs are created in:
 - `~/.elfexplorer/bin`
 
 Official download/home pages used by the tooling layer:
+- `bramble`: `https://github.com/Night-Traders-Dev/Bramble`
 - `binaryninja`: `https://binary.ninja/free/`
 - `ghidra`: `https://ghidra-sre.org/`
 - `ida`: `https://hex-rays.com/ida-pro/`

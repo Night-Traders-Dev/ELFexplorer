@@ -89,9 +89,23 @@ ELFEXPLORER_HOME = Path.home() / ".elfexplorer"
 LOCAL_TOOLS_ROOT = ELFEXPLORER_HOME / "tools"
 LOCAL_DOWNLOADS_ROOT = ELFEXPLORER_HOME / "downloads"
 LOCAL_BIN_ROOT = ELFEXPLORER_HOME / "bin"
-HTTP_USER_AGENT = "ELFexplorer/0.11.3 (+https://github.com/)"
+HTTP_USER_AGENT = "ELFexplorer/0.11.6 (+https://github.com/)"
 
 THIRD_PARTY_TOOLS = {
+    "bramble": {
+        "label": "Bramble",
+        "homepage": "https://github.com/Night-Traders-Dev/Bramble",
+        "download_url": "https://github.com/Night-Traders-Dev/Bramble",
+        "executables": ("bramble",),
+        "path_hints": (),
+        "version_args": None,
+        "install": {},
+        "manual_install": (
+            "Build from source with git, CMake, a native C toolchain, and recursive submodules. "
+            "Upstream flow: git clone --recursive https://github.com/Night-Traders-Dev/Bramble.git "
+            "&& ./build.sh"
+        ),
+    },
     "binaryninja": {
         "label": "Binary Ninja",
         "homepage": "https://binary.ninja/free/",
@@ -214,6 +228,42 @@ THIRD_PARTY_TOOLS = {
 }
 
 TOOL_WORKBENCH_PROFILES = {
+    "bramble": {
+        "launch_args": ["{file}"],
+        "cli_friendly": True,
+        "presets": [
+            {
+                "key": "run-firmware",
+                "label": "Run Firmware",
+                "description": "Run the selected UF2 or ELF firmware in Bramble.",
+                "args": ["{file}"],
+            },
+            {
+                "key": "debug-core0",
+                "label": "Debug Core0",
+                "description": "Run with core 0 debug output enabled.",
+                "args": ["-debug", "{file}"],
+            },
+            {
+                "key": "status",
+                "label": "Status Stream",
+                "description": "Run with periodic dual-core status updates.",
+                "args": ["{file}", "-status"],
+            },
+            {
+                "key": "gdb-server",
+                "label": "GDB Server",
+                "description": "Start Bramble with the GDB remote server on port 3333.",
+                "args": ["{file}", "-gdb"],
+            },
+            {
+                "key": "asm-trace",
+                "label": "ASM Trace",
+                "description": "Enable instruction trace output while running firmware.",
+                "args": ["-asm", "{file}"],
+            },
+        ],
+    },
     "binaryninja": {
         "launch_args": ["{file}"],
         "cli_friendly": False,
@@ -480,6 +530,8 @@ def _portable_install_supported(tool_key, environment=None):
     environment = environment or detect_host_environment()
     os_key = environment.get("os")
     arch = environment.get("arch")
+    if tool_key == "bramble":
+        return os_key in {"linux", "macos"} and all(shutil.which(name) for name in ("git", "cmake", "make"))
     if tool_key == "ghidra":
         return os_key == "linux" and arch == "x86_64"
     if tool_key == "binaryninja":
@@ -496,6 +548,8 @@ def _portable_install_supported(tool_key, environment=None):
 def _download_supported(tool_key, environment=None):
     environment = environment or detect_host_environment()
     os_key = environment.get("os")
+    if tool_key == "bramble":
+        return os_key in {"linux", "macos", "windows"}
     if tool_key == "binaryninja":
         return os_key in {"linux", "macos", "windows"}
     if tool_key == "ghidra":
@@ -675,6 +729,17 @@ def _resolve_download_spec(tool_key, environment=None):
     os_key = environment.get("os")
     arch = environment.get("arch")
 
+    if tool_key == "bramble":
+        return {
+            "source": "github-archive",
+            "repo": "Night-Traders-Dev/Bramble",
+            "filename": "Bramble-main.zip",
+            "url": "https://github.com/Night-Traders-Dev/Bramble/archive/refs/heads/main.zip",
+            "tool_key": tool_key,
+            "install_mode": "download-only",
+            "entry_globs": [],
+        }
+
     if tool_key == "binaryninja":
         asset = _resolve_binary_ninja_free_asset(environment)
         if not asset:
@@ -800,6 +865,150 @@ def _tool_install_root(tool_key, spec):
 
 def _portable_requires_download_only(spec):
     return spec.get("install_mode") == "download-only"
+
+
+def _install_bramble_from_source(environment=None, dry_run=False, event_cb=None):
+    environment = environment or detect_host_environment()
+    status = get_external_tool_status("bramble", environment=environment)
+    install_root = (LOCAL_TOOLS_ROOT / "bramble" / "main").expanduser()
+    repo_root = install_root / "repo"
+    build_root = repo_root / "build"
+    binary_path = build_root / "bramble"
+    clone_url = "https://github.com/Night-Traders-Dev/Bramble.git"
+    clone_command = ["git", "clone", "--recursive", clone_url, str(repo_root)]
+    update_command = ["git", "-C", str(repo_root), "pull", "--ff-only", "origin", "main"]
+    submodule_command = ["git", "-C", str(repo_root), "submodule", "update", "--init", "--recursive"]
+    configure_command = ["cmake", "-S", str(repo_root), "-B", str(build_root)]
+    build_command = ["cmake", "--build", str(build_root), "--parallel", str(max(1, os.cpu_count() or 1))]
+    _emit_tool_event(
+        event_cb,
+        "log",
+        f"Preparing source build for {status['label']} under {install_root}",
+        progress=6.0,
+        install_path=str(install_root),
+    )
+    if dry_run:
+        planned = [update_command if repo_root.exists() else clone_command, submodule_command, configure_command, build_command]
+        _emit_tool_event(
+            event_cb,
+            "progress",
+            f"Dry run: would source-build {status['label']} into {install_root}",
+            progress=100.0,
+            install_path=str(install_root),
+            command=planned,
+        )
+        return {
+            "ok": True,
+            "changed": False,
+            "message": f"Dry run: would source-build {status['label']} into {install_root}",
+            "status": status,
+            "install_path": str(install_root),
+            "command": planned,
+            "portable": True,
+        }
+
+    install_root.mkdir(parents=True, exist_ok=True)
+    if repo_root.exists():
+        _emit_tool_event(event_cb, "log", "Updating existing Bramble checkout", progress=12.0)
+        command = update_command
+    else:
+        _emit_tool_event(event_cb, "log", "Cloning Bramble repository with submodules", progress=12.0)
+        command = clone_command
+    returncode, output = _run_logged_subprocess(command, event_cb=event_cb, progress_range=(15.0, 40.0))
+    if returncode != 0:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"Failed to fetch Bramble sources. Command: {' '.join(command)}",
+            "status": status,
+            "install_path": str(install_root),
+            "command": command,
+            "output": output,
+        }
+
+    returncode, submodule_output = _run_logged_subprocess(
+        submodule_command,
+        event_cb=event_cb,
+        progress_range=(42.0, 58.0),
+    )
+    combined_output = "\n".join(chunk for chunk in [output, submodule_output] if chunk).strip()
+    if returncode != 0:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": "Failed to sync Bramble submodules.",
+            "status": status,
+            "install_path": str(install_root),
+            "command": submodule_command,
+            "output": combined_output,
+        }
+
+    returncode, configure_output = _run_logged_subprocess(
+        configure_command,
+        event_cb=event_cb,
+        progress_range=(60.0, 76.0),
+    )
+    combined_output = "\n".join(chunk for chunk in [combined_output, configure_output] if chunk).strip()
+    if returncode != 0:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": "Failed to configure the Bramble build with CMake.",
+            "status": status,
+            "install_path": str(install_root),
+            "command": configure_command,
+            "output": combined_output,
+        }
+
+    returncode, build_output = _run_logged_subprocess(
+        build_command,
+        event_cb=event_cb,
+        progress_range=(78.0, 94.0),
+    )
+    combined_output = "\n".join(chunk for chunk in [combined_output, build_output] if chunk).strip()
+    if returncode != 0:
+        return {
+            "ok": False,
+            "changed": False,
+            "message": "Failed to build Bramble.",
+            "status": status,
+            "install_path": str(install_root),
+            "command": build_command,
+            "output": combined_output,
+        }
+
+    if not binary_path.exists():
+        return {
+            "ok": False,
+            "changed": False,
+            "message": f"Bramble build completed but no executable was found at {binary_path}.",
+            "status": status,
+            "install_path": str(install_root),
+            "output": combined_output,
+        }
+
+    wrappers = _write_wrapper("bramble", binary_path)
+    _emit_tool_event(
+        event_cb,
+        "progress",
+        f"Installed {status['label']} locally from source",
+        progress=100.0,
+        install_path=str(install_root),
+    )
+    return {
+        "ok": True,
+        "changed": True,
+        "message": (
+            f"Installed {status['label']} locally in {install_root}. "
+            f"Launcher wrapper: {wrappers[0]}"
+        ),
+        "status": status,
+        "install_path": str(install_root),
+        "wrapper_paths": [str(path) for path in wrappers],
+        "command": [clone_command, submodule_command, configure_command, build_command],
+        "output": combined_output,
+        "portable": True,
+    }
 
 
 def download_external_tool(tool_key, dry_run=False, environment=None, output_dir=None, event_cb=None):
@@ -1467,6 +1676,19 @@ def install_external_tool(tool_key, dry_run=False, environment=None, event_cb=No
             "message": f"{status['label']} is already installed.",
             "status": status,
         }
+
+    if tool_key == "bramble" and status["portable_install_supported"]:
+        _emit_tool_event(
+            event_cb,
+            "log",
+            f"Using ELFexplorer-managed source build path for {status['label']}",
+            progress=10.0,
+        )
+        return _install_bramble_from_source(
+            environment=environment,
+            dry_run=dry_run,
+            event_cb=event_cb,
+        )
 
     command, manager_key = build_install_command(tool_key, environment=environment, interactive=False)
     display_command, _ = build_install_command(tool_key, environment=environment, interactive=True)

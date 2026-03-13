@@ -427,6 +427,7 @@ Current automatic-install coverage is conservative by design:
 - `imhex`: `brew`, `dnf`, `yay`, `paru`
 
 Current one-click local-install coverage on Linux:
+- `bramble`: source clone + recursive submodules + CMake build
 - `ghidra`: official release ZIP
 - `binaryninja`: Binary Ninja Free Linux ZIP
 - `cutter`: upstream AppImage
@@ -441,6 +442,7 @@ Local-install layout:
 Commercial/vendor-distributed tools such as `IDA Pro` are still status-checked, but installation remains manual.
 
 Official download/home pages currently surfaced by the tooling layer:
+- `bramble`: `https://github.com/Night-Traders-Dev/Bramble`
 - `binaryninja`: `https://binary.ninja/free/`
 - `ghidra`: `https://ghidra-sre.org/`
 - `ida`: `https://hex-rays.com/ida-pro/`
@@ -536,6 +538,7 @@ Behavior:
 - clicking or navigating the tool catalog changes the active tool immediately, then refreshes presets, launch state, and command context for that integration
 
 Built-in presets currently focus on stable command-line tools:
+- `bramble`: run firmware, debug core 0, status stream, GDB server, ASM trace
 - `radare2`: file info, sections, symbols, functions, strings
 - `rizin`: file info, sections, symbols, functions, strings
 - `cutter`: version
