@@ -1,6 +1,6 @@
 # ELFexplorer
 
-[![Version](https://img.shields.io/badge/version-0.12.0-blue)](#versioning)
+[![Version](https://img.shields.io/badge/version-0.12.1-blue)](#versioning)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](#requirements)
 [![UI](https://img.shields.io/badge/ui-textual%20default-0ea5e9)](#textual-workspace-default-ux)
 [![Reports](https://img.shields.io/badge/reports-markdown%20%7C%20pdf-16a34a)](#report-export)
@@ -13,6 +13,14 @@
 - host build-system inference
 - artifact classification (firmware, userspace executable, shared library, module, object)
 - evidence-oriented reporting with score breakdowns
+
+## What Changed in 0.12.1
+
+- Fixed the web dashboard client script so button handlers now bind correctly and scan/crawl/load/export actions execute.
+- Added dashboard regression tests for:
+  - generated JavaScript syntax validation
+  - HTTP scan/export route round-trips
+- Validated the scan, export, download, and state endpoints used by the web UI.
 
 ## What Changed in 0.12.0
 

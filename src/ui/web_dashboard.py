@@ -651,7 +651,7 @@ def build_dashboard_html(initial_state):
       }}
       const lines = evidenceList(report);
       panel.innerHTML = lines.length
-        ? `<pre>${{lines.join('\n')}}</pre>`
+        ? `<pre>${{lines.join('\\n')}}</pre>`
         : '<div class="empty">No explicit evidence lines were emitted for this report.</div>';
     }}
 
@@ -867,12 +867,11 @@ def human_filename(value):
     return Path(str(value)).name or "report"
 
 
-def run_web_dashboard(
+def create_dashboard_server(
     callbacks=None,
     initial_reports=None,
     host="127.0.0.1",
     port=8765,
-    open_browser=False,
 ):
     runtime = DashboardRuntime(callbacks=callbacks, initial_reports=initial_reports)
 
@@ -940,6 +939,22 @@ def run_web_dashboard(
     server = ThreadingHTTPServer((host, int(port)), DashboardHandler)
     display_host = "127.0.0.1" if host in {"0.0.0.0", ""} else host
     url = f"http://{display_host}:{server.server_port}"
+    return server, url, runtime
+
+
+def run_web_dashboard(
+    callbacks=None,
+    initial_reports=None,
+    host="127.0.0.1",
+    port=8765,
+    open_browser=False,
+):
+    server, url, _runtime = create_dashboard_server(
+        callbacks=callbacks,
+        initial_reports=initial_reports,
+        host=host,
+        port=port,
+    )
     print(f"Starting {APP_NAME} web dashboard at {url}")
     print("Press Ctrl+C to stop the dashboard.")
     if open_browser:

@@ -1,11 +1,17 @@
 import unittest
 from pathlib import Path
+import json
+import shutil
+import subprocess
+import tempfile
+import threading
+import urllib.request
 
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ui.web_dashboard import DashboardRuntime, build_dashboard_html
+from ui.web_dashboard import DashboardRuntime, build_dashboard_html, create_dashboard_server
 
 
 def _sample_report(path="/tmp/hello_c"):
@@ -70,6 +76,55 @@ class WebDashboardTests(unittest.TestCase):
         self.assertIn("Scan File", html)
         self.assertIn("Crawl Directory", html)
         self.assertIn("Load Saved JSON", html)
+
+    @unittest.skipUnless(shutil.which("node"), "node is required to syntax-check generated dashboard JavaScript")
+    def test_dashboard_html_embedded_script_parses_in_node(self):
+        runtime = DashboardRuntime(initial_reports=[_sample_report()])
+        html = build_dashboard_html(runtime.state())
+        script = html.split('<script id="initial-state" type="application/json">', 1)[1]
+        script = script.split("</script>", 1)[1].split("<script>", 1)[1].split("</script>", 1)[0]
+
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as handle:
+            handle.write(script)
+            temp_path = handle.name
+        try:
+            subprocess.run(["node", "--check", temp_path], check=True, capture_output=True, text=True)
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+    def test_dashboard_server_scan_and_export_routes(self):
+        callbacks = {
+            "scan": lambda path, mode: _sample_report(path=path),
+            "export_report_md": lambda report, path: Path(path),
+            "list_saved": lambda: [],
+        }
+        server, url, _runtime = create_dashboard_server(callbacks=callbacks, initial_reports=[], port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            scan_request = urllib.request.Request(
+                f"{url}/api/scan",
+                data=json.dumps({"path": "/tmp/from-web.elf", "mode": "general"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            scan_state = json.load(urllib.request.urlopen(scan_request))
+            self.assertEqual(scan_state["report_count"], 1)
+            self.assertEqual(scan_state["reports"][0]["file"], "/tmp/from-web.elf")
+
+            export_request = urllib.request.Request(
+                f"{url}/api/export/report",
+                data=json.dumps({"index": 0, "format": "markdown"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            export_response = json.load(urllib.request.urlopen(export_request))
+            self.assertTrue(export_response["ok"])
+            self.assertTrue(export_response["path"].endswith(".md"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 if __name__ == "__main__":

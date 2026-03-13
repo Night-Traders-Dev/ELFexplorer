@@ -15,7 +15,7 @@ The project is intentionally heuristic. It does not claim perfect provenance rec
 - deterministic regression tests
 - conservative fallback (`Ambiguous` or `Unknown`) when evidence is weak or conflicting
 
-Current release: `0.10.0` (see `VERSION`).
+Current release: `0.12.1` (see `VERSION`).
 
 Supported input containers currently include:
 - ELF binaries
@@ -604,6 +604,11 @@ Current dashboard capabilities:
 - metadata, evidence, and raw JSON panels
 - Markdown/PDF export for the active report
 - direct JSON download for the active report
+
+Validation and regression coverage now include:
+- generated dashboard JavaScript syntax validation via `node --check`
+- local HTTP server tests for web `scan` and `export` routes
+- direct verification that the web action buttons map onto working API endpoints
 
 The web dashboard is intentionally dependency-light:
 - Python stdlib HTTP server backend
